@@ -3,10 +3,9 @@ import SwiftUI
 @main
 struct LocalClassroomApp: App {
     var body: some Scene {
-        WindowGroup("") {
+        WindowGroup("Local Classroom") {
             HomeView()
         }
-        .windowStyle(.titleBar)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("Open Classroom...") {

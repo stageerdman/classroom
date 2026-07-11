@@ -10,7 +10,11 @@ struct ClassroomBrowserView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar
+            ClassroomSidebarView(
+                viewModel: viewModel,
+                selectedSidebarID: $selectedSidebarID,
+                onSelectLesson: selectLesson
+            )
                 .frame(width: 310)
 
             Divider()
@@ -34,85 +38,7 @@ struct ClassroomBrowserView: View {
             noteAutosaveTask?.cancel()
             viewModel.saveSelectedNoteIfNeeded()
         }
-        .background(WindowConfigurator().frame(width: 0, height: 0))
         .frame(minWidth: 900, minHeight: 560)
-    }
-
-    private var sidebar: some View {
-        VStack(spacing: 0) {
-            List(selection: $selectedSidebarID) {
-                if let sidebar = viewModel.sidebar {
-                    Section(sidebar.title) {
-                        classroomProgressHeader
-
-                        ForEach(sidebar.modules) { module in
-                            DisclosureGroup {
-                                ForEach(module.directLessons) { lesson in
-                                    lessonRow(lesson)
-                                }
-
-                                ForEach(module.categories) { category in
-                                    DisclosureGroup(category.name) {
-                                        ForEach(category.lessons) { lesson in
-                                            lessonRow(lesson)
-                                        }
-                                    }
-                                }
-                            } label: {
-                                Label(module.name, systemImage: "rectangle.stack")
-                            }
-                        }
-                    }
-
-                    if sidebar.warningCount > 0 {
-                        Section("Warnings") {
-                            Label("\(sidebar.warningCount) structural warning\(sidebar.warningCount == 1 ? "" : "s")", systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(.orange)
-                        }
-                    }
-                } else {
-                    Section("Classroom") {
-                        Text("Open a folder to begin.")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if !viewModel.recentClassrooms.isEmpty {
-                    Section("Recent") {
-                        ForEach(viewModel.recentClassrooms) { recent in
-                            HStack {
-                                Button {
-                                    viewModel.openRecent(recent)
-                                } label: {
-                                    Label(recent.name, systemImage: "clock")
-                                        .lineLimit(1)
-                                }
-                                .buttonStyle(.plain)
-
-                                Spacer()
-
-                                Button {
-                                    viewModel.removeRecent(recent)
-                                } label: {
-                                    Image(systemName: "xmark")
-                                }
-                                .buttonStyle(.borderless)
-                                .help("Remove from recent classrooms")
-                            }
-                        }
-                    }
-                }
-            }
-
-            if let errorMessage = viewModel.errorMessage {
-                Text(errorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(Color(nsColor: .windowBackgroundColor))
-            }
-        }
     }
 
     private var detail: some View {
@@ -136,7 +62,7 @@ struct ClassroomBrowserView: View {
 
                     if let player = playbackService.player {
                         PlayerView(player: player)
-                            .frame(minHeight: 360)
+                            .frame(height: 360)
                             .background(Color.black)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             .onDisappear {
@@ -185,31 +111,6 @@ struct ClassroomBrowserView: View {
             .padding(32)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private var classroomProgressHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Progress")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-
-                Spacer()
-
-                Text("\(viewModel.classroomProgress.completedLessons)/\(viewModel.classroomProgress.totalLessons) complete")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            ProgressView(value: viewModel.classroomProgress.percentage) {
-                EmptyView()
-            } currentValueLabel: {
-                Text(viewModel.classroomProgress.percentageText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 4)
     }
 
     private var lessonNavigationControls: some View {
@@ -297,21 +198,6 @@ struct ClassroomBrowserView: View {
         }
     }
 
-    private func lessonRow(_ lesson: SidebarLesson) -> some View {
-        HStack {
-            Label(lesson.title, systemImage: "play.rectangle")
-                .lineLimit(1)
-            Spacer()
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            saveCurrentPlaybackProgress()
-            selectedSidebarID = lesson.id
-            viewModel.selectLesson(lesson)
-        }
-        .tag(lesson.id)
-    }
-
     private func openFolder() {
         viewModel.saveSelectedNoteIfNeeded()
 
@@ -325,6 +211,12 @@ struct ClassroomBrowserView: View {
         if panel.runModal() == .OK, let url = panel.url {
             viewModel.openFolder(url)
         }
+    }
+
+    private func selectLesson(_ lesson: SidebarLesson) {
+        saveCurrentPlaybackProgress()
+        selectedSidebarID = lesson.id
+        viewModel.selectLesson(lesson)
     }
 
     private func loadSelectedLesson() {
