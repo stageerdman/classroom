@@ -1,0 +1,364 @@
+import Combine
+import Foundation
+
+@MainActor
+public final class ClassroomBrowserViewModel: ObservableObject {
+    @Published public private(set) var classroom: Classroom?
+    @Published public private(set) var sidebar: ClassroomSidebar?
+    @Published public private(set) var recentClassrooms: [RecentClassroom]
+    @Published public private(set) var selectedLessonPath: String?
+    @Published public private(set) var selectedLesson: Lesson?
+    @Published public private(set) var classroomProgress = ProgressSummary(completedLessons: 0, totalLessons: 0)
+    @Published public private(set) var moduleProgress: [ModuleProgressSummary] = []
+    @Published public private(set) var noteText = ""
+    @Published public private(set) var isNoteDirty = false
+    @Published public private(set) var noteErrorMessage: String?
+    @Published public private(set) var errorMessage: String?
+
+    private let scanner: ClassroomScanner
+    private let recentStore: RecentClassroomStore
+    private let accessStore: FolderAccessStore
+    private let metadataStore: MetadataStore
+    private let notesService: NotesService
+    private var currentRootURL: URL?
+
+    public init(
+        scanner: ClassroomScanner = ClassroomScanner(),
+        recentStore: RecentClassroomStore = RecentClassroomStore(),
+        accessStore: FolderAccessStore = SecurityScopedFolderAccessStore(),
+        metadataStore: MetadataStore = MetadataStore(),
+        notesService: NotesService = NotesService()
+    ) {
+        self.scanner = scanner
+        self.recentStore = recentStore
+        self.accessStore = accessStore
+        self.metadataStore = metadataStore
+        self.notesService = notesService
+        self.recentClassrooms = recentStore.list()
+    }
+
+    public func openFolder(_ url: URL) {
+        let standardizedURL = url.standardizedFileURL
+        accessStore.saveAccess(for: standardizedURL)
+        openResolvedURL(standardizedURL, shouldAddToRecent: true)
+    }
+
+    public func openRecent(_ recent: RecentClassroom) {
+        let resolvedURL = accessStore.resolvedURL(forPath: recent.path)
+        openResolvedURL(resolvedURL, shouldAddToRecent: true)
+    }
+
+    public func removeRecent(_ recent: RecentClassroom) {
+        recentStore.remove(path: recent.path)
+        recentClassrooms = recentStore.list()
+    }
+
+    public func refresh() {
+        saveSelectedNoteIfNeeded()
+
+        guard let currentRootURL else {
+            errorMessage = "Open a classroom folder before refreshing."
+            return
+        }
+
+        openResolvedURL(currentRootURL, shouldAddToRecent: false)
+    }
+
+    public func selectLesson(_ lesson: SidebarLesson) {
+        saveSelectedNoteIfNeeded()
+        selectLesson(relativePath: lesson.relativePath)
+    }
+
+    public func savePlaybackProgress(position: Double, duration: Double?, now: Date = Date()) {
+        guard selectedLesson != nil else {
+            return
+        }
+
+        updateSelectedLessonState { state in
+            ProgressService.updatedState(from: state, position: position, duration: duration, now: now)
+        }
+    }
+
+    public func setSelectedLessonCompleted(_ completed: Bool) {
+        guard selectedLesson != nil else {
+            return
+        }
+
+        updateSelectedLessonState { state in
+            ProgressService.manuallyCompleted(state, completed: completed)
+        }
+    }
+
+    public func selectNextLesson() {
+        saveSelectedNoteIfNeeded()
+        selectAdjacentLesson(offset: 1)
+    }
+
+    public func selectPreviousLesson() {
+        saveSelectedNoteIfNeeded()
+        selectAdjacentLesson(offset: -1)
+    }
+
+    public func updateNoteText(_ text: String) {
+        noteText = text
+        isNoteDirty = true
+        noteErrorMessage = nil
+    }
+
+    public func saveSelectedNoteIfNeeded() {
+        guard
+            isNoteDirty,
+            let selectedLesson,
+            !noteText.isEmpty || FileManager.default.fileExists(atPath: selectedLesson.notesURL.path)
+        else {
+            return
+        }
+
+        do {
+            try notesService.saveNotes(noteText, for: selectedLesson)
+            isNoteDirty = false
+            noteErrorMessage = nil
+        } catch {
+            noteErrorMessage = "Notes could not be saved."
+        }
+    }
+
+    public func saveSelectedNoteExplicitly() {
+        guard let selectedLesson else {
+            return
+        }
+
+        do {
+            try notesService.saveNotes(noteText, for: selectedLesson)
+            isNoteDirty = false
+            noteErrorMessage = nil
+        } catch {
+            noteErrorMessage = "Notes could not be saved."
+        }
+    }
+
+    public static func sidebar(from classroom: Classroom) -> ClassroomSidebar {
+        ClassroomSidebar(
+            title: classroom.name,
+            modules: classroom.modules.map { module in
+                SidebarModule(
+                    id: module.relativePath,
+                    name: module.name,
+                    directLessons: module.directLessons.map(Self.sidebarLesson),
+                    categories: module.categories.map { category in
+                        SidebarCategory(
+                            id: category.relativePath,
+                            name: category.name,
+                            lessons: category.lessons.map(Self.sidebarLesson)
+                        )
+                    }
+                )
+            },
+            warningCount: classroom.warnings.count
+        )
+    }
+
+    private func openResolvedURL(_ url: URL, shouldAddToRecent: Bool) {
+        let didStartAccessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessing {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let scannedClassroom = scanner.scan(rootURL: url)
+
+        if scannedClassroom.warnings.contains(where: { $0.kind == .rootMissing }) {
+            currentRootURL = nil
+            classroom = nil
+            sidebar = nil
+            selectedLessonPath = nil
+            selectedLesson = nil
+            noteText = ""
+            isNoteDirty = false
+            noteErrorMessage = nil
+            updateProgressSummaries()
+            errorMessage = "Classroom folder could not be opened: \(url.path)"
+            recentClassrooms = recentStore.list()
+            return
+        }
+
+        let metadataResult = metadataStore.loadMergeAndSave(classroom: scannedClassroom)
+        let mergedClassroom = metadataResult.classroom
+
+        currentRootURL = url
+        classroom = mergedClassroom
+        sidebar = Self.sidebar(from: mergedClassroom)
+        updateProgressSummaries()
+        errorMessage = nil
+
+        if selectedLessonPath != nil && lesson(for: selectedLessonPath, in: mergedClassroom) == nil {
+            selectedLessonPath = nil
+            selectedLesson = nil
+            noteText = ""
+            isNoteDirty = false
+            noteErrorMessage = nil
+        } else if selectedLessonPath != nil {
+            selectedLesson = lesson(for: selectedLessonPath, in: mergedClassroom)
+            loadNotesForSelectedLesson()
+        }
+
+        if shouldAddToRecent {
+            recentStore.add(url)
+            recentClassrooms = recentStore.list()
+        }
+    }
+
+    private static func sidebarLesson(_ lesson: Lesson) -> SidebarLesson {
+        SidebarLesson(id: lesson.relativePath, title: lesson.title, relativePath: lesson.relativePath)
+    }
+
+    private func selectLesson(relativePath: String) {
+        guard
+            let classroom,
+            let selected = lesson(for: relativePath, in: classroom)
+        else {
+            selectedLessonPath = nil
+            selectedLesson = nil
+            errorMessage = "Lesson could not be found: \(relativePath)"
+            return
+        }
+
+        guard FileManager.default.fileExists(atPath: selected.videoURL.path) else {
+            selectedLessonPath = nil
+            selectedLesson = nil
+            errorMessage = "Video file is missing: \(selected.videoURL.path)"
+            return
+        }
+
+        selectedLessonPath = selected.relativePath
+        selectedLesson = selected
+        loadNotesForSelectedLesson()
+        errorMessage = nil
+    }
+
+    private func loadNotesForSelectedLesson() {
+        guard let selectedLesson else {
+            noteText = ""
+            isNoteDirty = false
+            noteErrorMessage = nil
+            return
+        }
+
+        do {
+            noteText = try notesService.loadNotes(for: selectedLesson)
+            isNoteDirty = false
+            noteErrorMessage = nil
+        } catch {
+            noteText = ""
+            isNoteDirty = false
+            noteErrorMessage = "Notes could not be loaded."
+        }
+    }
+
+    private func updateSelectedLessonState(transform: (LessonState) -> LessonState) {
+        guard
+            let currentRootURL,
+            let selectedLessonPath,
+            var classroom
+        else {
+            return
+        }
+
+        do {
+            let updatedState = try metadataStore.updateLessonState(
+                rootURL: currentRootURL,
+                relativePath: selectedLessonPath,
+                transform: transform
+            )
+            applyLessonState(updatedState, relativePath: selectedLessonPath, classroom: &classroom)
+            self.classroom = classroom
+            selectedLesson = lesson(for: selectedLessonPath, in: classroom)
+            updateProgressSummaries()
+            errorMessage = nil
+        } catch {
+            errorMessage = "Playback progress could not be saved."
+        }
+    }
+
+    private func applyLessonState(_ state: LessonState, relativePath: String, classroom: inout Classroom) {
+        for moduleIndex in classroom.modules.indices {
+            for lessonIndex in classroom.modules[moduleIndex].directLessons.indices
+                where classroom.modules[moduleIndex].directLessons[lessonIndex].relativePath == relativePath {
+                classroom.modules[moduleIndex].directLessons[lessonIndex].state = state
+                return
+            }
+
+            for categoryIndex in classroom.modules[moduleIndex].categories.indices {
+                for lessonIndex in classroom.modules[moduleIndex].categories[categoryIndex].lessons.indices
+                    where classroom.modules[moduleIndex].categories[categoryIndex].lessons[lessonIndex].relativePath == relativePath {
+                    classroom.modules[moduleIndex].categories[categoryIndex].lessons[lessonIndex].state = state
+                    return
+                }
+            }
+        }
+    }
+
+    private func updateProgressSummaries() {
+        guard let classroom else {
+            classroomProgress = ProgressSummary(completedLessons: 0, totalLessons: 0)
+            moduleProgress = []
+            return
+        }
+
+        classroomProgress = ProgressService.classroomProgress(for: classroom)
+        moduleProgress = ProgressService.moduleProgress(for: classroom)
+    }
+
+    private func selectAdjacentLesson(offset: Int) {
+        let lessons = visibleLessons
+        guard !lessons.isEmpty else {
+            return
+        }
+
+        guard
+            let selectedLessonPath,
+            let selectedIndex = lessons.firstIndex(where: { $0.relativePath == selectedLessonPath })
+        else {
+            selectLesson(relativePath: lessons[0].relativePath)
+            return
+        }
+
+        let nextIndex = selectedIndex + offset
+        guard lessons.indices.contains(nextIndex) else {
+            return
+        }
+
+        selectLesson(relativePath: lessons[nextIndex].relativePath)
+    }
+
+    private var visibleLessons: [Lesson] {
+        guard let classroom else {
+            return []
+        }
+
+        return classroom.modules.flatMap { module in
+            module.directLessons + module.categories.flatMap(\.lessons)
+        }
+    }
+
+    private func lesson(for relativePath: String?, in classroom: Classroom) -> Lesson? {
+        guard let relativePath else {
+            return nil
+        }
+
+        for module in classroom.modules {
+            if let lesson = module.directLessons.first(where: { $0.relativePath == relativePath }) {
+                return lesson
+            }
+
+            for category in module.categories {
+                if let lesson = category.lessons.first(where: { $0.relativePath == relativePath }) {
+                    return lesson
+                }
+            }
+        }
+
+        return nil
+    }
+}
