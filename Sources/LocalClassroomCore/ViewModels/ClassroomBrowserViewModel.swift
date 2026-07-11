@@ -99,6 +99,97 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         selectAdjacentLesson(offset: -1)
     }
 
+    public func moveModules(from source: IndexSet, to destination: Int) {
+        updateOrdering { metadata, sidebar in
+            metadata.moduleOrder = OrderingService.moved(sidebar.modules.map(\.id), from: source, to: destination)
+        }
+    }
+
+    public func moveModule(id: String, offset: Int) {
+        updateOrdering { metadata, sidebar in
+            metadata.moduleOrder = OrderingService.orderAfterMoving(id: id, in: sidebar.modules.map(\.id), offset: offset)
+        }
+    }
+
+    public func resetModuleOrder() {
+        updateOrdering { metadata, _ in
+            metadata.moduleOrder = []
+        }
+    }
+
+    public func moveDirectLessons(moduleID: String, from source: IndexSet, to destination: Int) {
+        updateOrdering { metadata, sidebar in
+            guard let module = sidebar.modules.first(where: { $0.id == moduleID }) else {
+                return
+            }
+            metadata.lessonOrder[moduleID] = OrderingService.moved(module.directLessons.map(\.fileName), from: source, to: destination)
+        }
+    }
+
+    public func moveDirectLesson(moduleID: String, lessonID: String, offset: Int) {
+        updateOrdering { metadata, sidebar in
+            guard let module = sidebar.modules.first(where: { $0.id == moduleID }) else {
+                return
+            }
+            metadata.lessonOrder[moduleID] = OrderingService.orderAfterMoving(id: lessonID.fileName, in: module.directLessons.map(\.fileName), offset: offset)
+        }
+    }
+
+    public func resetDirectLessonOrder(moduleID: String) {
+        updateOrdering { metadata, _ in
+            metadata.lessonOrder.removeValue(forKey: moduleID)
+        }
+    }
+
+    public func moveCategories(moduleID: String, from source: IndexSet, to destination: Int) {
+        updateOrdering { metadata, sidebar in
+            guard let module = sidebar.modules.first(where: { $0.id == moduleID }) else {
+                return
+            }
+            metadata.categoryOrder[moduleID] = OrderingService.moved(module.categories.map(\.name), from: source, to: destination)
+        }
+    }
+
+    public func moveCategory(moduleID: String, categoryID: String, offset: Int) {
+        updateOrdering { metadata, sidebar in
+            guard let module = sidebar.modules.first(where: { $0.id == moduleID }) else {
+                return
+            }
+            let categoryName = String(categoryID.split(separator: "/").last ?? "")
+            metadata.categoryOrder[moduleID] = OrderingService.orderAfterMoving(id: categoryName, in: module.categories.map(\.name), offset: offset)
+        }
+    }
+
+    public func resetCategoryOrder(moduleID: String) {
+        updateOrdering { metadata, _ in
+            metadata.categoryOrder.removeValue(forKey: moduleID)
+        }
+    }
+
+    public func moveCategoryLessons(categoryID: String, from source: IndexSet, to destination: Int) {
+        updateOrdering { metadata, sidebar in
+            guard let category = sidebar.modules.flatMap(\.categories).first(where: { $0.id == categoryID }) else {
+                return
+            }
+            metadata.lessonOrder[categoryID] = OrderingService.moved(category.lessons.map(\.fileName), from: source, to: destination)
+        }
+    }
+
+    public func moveCategoryLesson(categoryID: String, lessonID: String, offset: Int) {
+        updateOrdering { metadata, sidebar in
+            guard let category = sidebar.modules.flatMap(\.categories).first(where: { $0.id == categoryID }) else {
+                return
+            }
+            metadata.lessonOrder[categoryID] = OrderingService.orderAfterMoving(id: lessonID.fileName, in: category.lessons.map(\.fileName), offset: offset)
+        }
+    }
+
+    public func resetCategoryLessonOrder(categoryID: String) {
+        updateOrdering { metadata, _ in
+            metadata.lessonOrder.removeValue(forKey: categoryID)
+        }
+    }
+
     public func updateNoteText(_ text: String) {
         noteText = text
         isNoteDirty = true
@@ -332,6 +423,25 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         selectLesson(relativePath: lessons[nextIndex].relativePath)
     }
 
+    private func updateOrdering(_ transform: (inout ClassroomMetadata, ClassroomSidebar) -> Void) {
+        guard
+            let currentRootURL,
+            let sidebar
+        else {
+            return
+        }
+
+        do {
+            _ = try metadataStore.updateOrdering(rootURL: currentRootURL) { metadata in
+                transform(&metadata, sidebar)
+            }
+            openResolvedURL(currentRootURL, shouldAddToRecent: false)
+            errorMessage = nil
+        } catch {
+            errorMessage = "Ordering could not be saved."
+        }
+    }
+
     private var visibleLessons: [Lesson] {
         guard let classroom else {
             return []
@@ -360,5 +470,17 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
 
         return nil
+    }
+}
+
+private extension SidebarLesson {
+    var fileName: String {
+        String(relativePath.split(separator: "/").last ?? "")
+    }
+}
+
+private extension String {
+    var fileName: String {
+        String(split(separator: "/").last ?? "")
     }
 }

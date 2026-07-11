@@ -356,4 +356,68 @@ expect(didFailToSaveLockedNote, "Saving into an unwritable notes directory shoul
 let preservedNoteText = try String(contentsOf: preservedNoteURL, encoding: .utf8)
 expect(preservedNoteText == "Original", "Failed atomic save should preserve the previous note")
 
+let orderingRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
+@MainActor func createOrderingFile(_ relativePath: String) throws {
+    let url = orderingRoot.appendingPathComponent(relativePath)
+    try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data().write(to: url)
+}
+
+try createOrderingFile("Module A/Lesson 2.mp4")
+try createOrderingFile("Module A/Lesson 10.mp4")
+try createOrderingFile("Module A/Category B/Cat Lesson 2.mp4")
+try createOrderingFile("Module A/Category A/Cat Lesson 10.mp4")
+try createOrderingFile("Module B/Welcome.mp4")
+
+var orderingMetadata = ClassroomMetadata(
+    moduleOrder: ["Module B", "Missing Module"],
+    categoryOrder: ["Module A": ["Category B", "Missing Category"]],
+    lessonOrder: [
+        "Module A": ["Lesson 10.mp4", "Missing.mp4"],
+        "Module A/Category A": ["Cat Lesson 10.mp4"]
+    ]
+)
+try metadataStore.save(orderingMetadata, rootURL: orderingRoot)
+
+let orderedResult = metadataStore.loadMergeAndSave(classroom: ClassroomScanner().scan(rootURL: orderingRoot), now: firstMetadataDate)
+expect(orderedResult.classroom.modules.map(\.name) == ["Module B", "Module A"], "Saved module order should be respected and new modules appended naturally")
+expect(orderedResult.classroom.modules[1].categories.map(\.name) == ["Category B", "Category A"], "Saved category order should be respected and new categories appended naturally")
+expect(orderedResult.classroom.modules[1].directLessons.map { String($0.relativePath.split(separator: "/").last ?? "") } == ["Lesson 10.mp4", "Lesson 2.mp4"], "Saved direct lesson ordering should be respected")
+expect(orderedResult.metadata.moduleOrder == ["Module B"], "Missing module ordering references should be removed during merge")
+expect(orderedResult.metadata.categoryOrder["Module A"] == ["Category B"], "Missing category ordering references should be removed during merge")
+expect(orderedResult.metadata.lessonOrder["Module A"] == ["Lesson 10.mp4"], "Missing lesson ordering references should be removed during merge")
+
+try createOrderingFile("Module C/New.mp4")
+let appendedOrderingResult = metadataStore.loadMergeAndSave(classroom: ClassroomScanner().scan(rootURL: orderingRoot), now: secondMetadataDate)
+expect(appendedOrderingResult.classroom.modules.map(\.name) == ["Module B", "Module A", "Module C"], "New modules should append after saved order in natural order")
+
+let orderingDefaultsSuite = "LocalClassroomOrderingSmokeTests.\(UUID().uuidString)"
+guard let orderingDefaults = UserDefaults(suiteName: orderingDefaultsSuite) else {
+    fatalError("Could not create ordering smoke test user defaults")
+}
+defer {
+    orderingDefaults.removePersistentDomain(forName: orderingDefaultsSuite)
+}
+
+let orderingViewModel = await MainActor.run {
+    ClassroomBrowserViewModel(
+        recentStore: RecentClassroomStore(userDefaults: orderingDefaults),
+        accessStore: NoopFolderAccessStore()
+    )
+}
+
+await MainActor.run {
+    orderingViewModel.openFolder(orderingRoot)
+    orderingViewModel.moveModule(id: "Module C", offset: -1)
+    expect(orderingViewModel.sidebar?.modules.map(\.name) == ["Module B", "Module C", "Module A"], "Moving a module should update only module order")
+    orderingViewModel.resetModuleOrder()
+    expect(orderingViewModel.sidebar?.modules.map(\.name) == ["Module A", "Module B", "Module C"], "Resetting module order should restore filename order")
+    orderingViewModel.moveDirectLesson(moduleID: "Module A", lessonID: "Module A/Lesson 10.mp4", offset: 1)
+    expect(orderingViewModel.sidebar?.modules.first?.directLessons.map(\.title) == ["Lesson 2", "Lesson 10"], "Moving direct lessons should update only direct lesson order")
+}
+
+let persistedOrderingMetadata = try metadataStore.load(rootURL: orderingRoot)
+expect(persistedOrderingMetadata.moduleOrder.isEmpty, "Reset module order should survive metadata reload")
+expect(persistedOrderingMetadata.lessonOrder["Module A"] == ["Lesson 2.mp4", "Lesson 10.mp4"], "Direct lesson order should survive metadata reload")
+
 print("LocalClassroomSmokeTests passed")

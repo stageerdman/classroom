@@ -17,18 +17,78 @@ struct ClassroomSidebarView: View {
                             DisclosureGroup {
                                 ForEach(module.directLessons) { lesson in
                                     lessonRow(lesson)
+                                        .contextMenu {
+                                            Button("Move Up") {
+                                                viewModel.moveDirectLesson(moduleID: module.id, lessonID: lesson.id, offset: -1)
+                                            }
+                                            Button("Move Down") {
+                                                viewModel.moveDirectLesson(moduleID: module.id, lessonID: lesson.id, offset: 1)
+                                            }
+                                            Divider()
+                                            Button("Reset Direct Lesson Order") {
+                                                viewModel.resetDirectLessonOrder(moduleID: module.id)
+                                            }
+                                        }
+                                }
+                                .onMove { source, destination in
+                                    viewModel.moveDirectLessons(moduleID: module.id, from: source, to: destination)
                                 }
 
                                 ForEach(module.categories) { category in
                                     DisclosureGroup(category.name) {
                                         ForEach(category.lessons) { lesson in
                                             lessonRow(lesson)
+                                                .contextMenu {
+                                                    Button("Move Up") {
+                                                        viewModel.moveCategoryLesson(categoryID: category.id, lessonID: lesson.id, offset: -1)
+                                                    }
+                                                    Button("Move Down") {
+                                                        viewModel.moveCategoryLesson(categoryID: category.id, lessonID: lesson.id, offset: 1)
+                                                    }
+                                                    Divider()
+                                                    Button("Reset Lesson Order") {
+                                                        viewModel.resetCategoryLessonOrder(categoryID: category.id)
+                                                    }
+                                                }
+                                        }
+                                        .onMove { source, destination in
+                                            viewModel.moveCategoryLessons(categoryID: category.id, from: source, to: destination)
                                         }
                                     }
+                                    .contextMenu {
+                                        Button("Move Up") {
+                                            viewModel.moveCategory(moduleID: module.id, categoryID: category.id, offset: -1)
+                                        }
+                                        Button("Move Down") {
+                                            viewModel.moveCategory(moduleID: module.id, categoryID: category.id, offset: 1)
+                                        }
+                                        Divider()
+                                        Button("Reset Category Order") {
+                                            viewModel.resetCategoryOrder(moduleID: module.id)
+                                        }
+                                    }
+                                }
+                                .onMove { source, destination in
+                                    viewModel.moveCategories(moduleID: module.id, from: source, to: destination)
                                 }
                             } label: {
                                 Label(module.name, systemImage: "rectangle.stack")
                             }
+                            .contextMenu {
+                                Button("Move Up") {
+                                    viewModel.moveModule(id: module.id, offset: -1)
+                                }
+                                Button("Move Down") {
+                                    viewModel.moveModule(id: module.id, offset: 1)
+                                }
+                                Divider()
+                                Button("Reset Module Order") {
+                                    viewModel.resetModuleOrder()
+                                }
+                            }
+                        }
+                        .onMove { source, destination in
+                            viewModel.moveModules(from: source, to: destination)
                         }
                     }
 

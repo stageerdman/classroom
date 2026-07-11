@@ -81,6 +81,13 @@ public struct MetadataStore {
         return updatedState
     }
 
+    public func updateOrdering(rootURL: URL, transform: (inout ClassroomMetadata) -> Void) throws -> ClassroomMetadata {
+        var metadata = try load(rootURL: rootURL)
+        transform(&metadata)
+        try save(metadata, rootURL: rootURL)
+        return metadata
+    }
+
     private func loadOrCreateMetadata(rootURL: URL, now: Date, warnings: inout [ClassroomWarning]) -> ClassroomMetadata {
         let url = metadataURL(rootURL: rootURL)
 
@@ -129,6 +136,26 @@ public struct MetadataStore {
             }
         }
 
+        merged.moduleOrder = merged.moduleOrder.filter { modulePath in
+            classroom.modules.contains { $0.relativePath == modulePath }
+        }
+
+        for module in classroom.modules {
+            let modulePath = module.relativePath
+            merged.categoryOrder[modulePath] = (merged.categoryOrder[modulePath] ?? []).filter { categoryName in
+                module.categories.contains { $0.name == categoryName }
+            }
+            merged.lessonOrder[modulePath] = (merged.lessonOrder[modulePath] ?? []).filter { lessonName in
+                module.directLessons.contains { $0.relativePath.split(separator: "/").last.map(String.init) == lessonName }
+            }
+
+            for category in module.categories {
+                merged.lessonOrder[category.relativePath] = (merged.lessonOrder[category.relativePath] ?? []).filter { lessonName in
+                    category.lessons.contains { $0.relativePath.split(separator: "/").last.map(String.init) == lessonName }
+                }
+            }
+        }
+
         return merged
     }
 
@@ -150,13 +177,42 @@ public struct MetadataStore {
     private func applying(metadata: ClassroomMetadata, to classroom: Classroom) -> Classroom {
         var classroom = classroom
 
+        classroom.modules = OrderingService.ordered(
+            classroom.modules,
+            savedOrder: metadata.moduleOrder,
+            id: { $0.relativePath },
+            naturalKey: { $0.name }
+        )
+
         for moduleIndex in classroom.modules.indices {
+            let modulePath = classroom.modules[moduleIndex].relativePath
+            classroom.modules[moduleIndex].directLessons = OrderingService.ordered(
+                classroom.modules[moduleIndex].directLessons,
+                savedOrder: metadata.lessonOrder[modulePath] ?? [],
+                id: { $0.fileName },
+                naturalKey: { $0.title }
+            )
+            classroom.modules[moduleIndex].categories = OrderingService.ordered(
+                classroom.modules[moduleIndex].categories,
+                savedOrder: metadata.categoryOrder[modulePath] ?? [],
+                id: { $0.name },
+                naturalKey: { $0.name }
+            )
+
             for lessonIndex in classroom.modules[moduleIndex].directLessons.indices {
                 let relativePath = classroom.modules[moduleIndex].directLessons[lessonIndex].relativePath
                 classroom.modules[moduleIndex].directLessons[lessonIndex].state = metadata.lessonState[relativePath] ?? LessonState()
             }
 
             for categoryIndex in classroom.modules[moduleIndex].categories.indices {
+                let categoryPath = classroom.modules[moduleIndex].categories[categoryIndex].relativePath
+                classroom.modules[moduleIndex].categories[categoryIndex].lessons = OrderingService.ordered(
+                    classroom.modules[moduleIndex].categories[categoryIndex].lessons,
+                    savedOrder: metadata.lessonOrder[categoryPath] ?? [],
+                    id: { $0.fileName },
+                    naturalKey: { $0.title }
+                )
+
                 for lessonIndex in classroom.modules[moduleIndex].categories[categoryIndex].lessons.indices {
                     let relativePath = classroom.modules[moduleIndex].categories[categoryIndex].lessons[lessonIndex].relativePath
                     classroom.modules[moduleIndex].categories[categoryIndex].lessons[lessonIndex].state = metadata.lessonState[relativePath] ?? LessonState()
@@ -212,5 +268,11 @@ private extension Classroom {
             module.directLessons.map(\.relativePath) +
                 module.categories.flatMap { $0.lessons.map(\.relativePath) }
         }
+    }
+}
+
+private extension Lesson {
+    var fileName: String {
+        String(relativePath.split(separator: "/").last ?? "")
     }
 }
