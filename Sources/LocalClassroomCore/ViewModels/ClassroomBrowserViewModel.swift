@@ -301,7 +301,12 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     }
 
     private static func sidebarLesson(_ lesson: Lesson) -> SidebarLesson {
-        SidebarLesson(id: lesson.relativePath, title: lesson.title, relativePath: lesson.relativePath)
+        SidebarLesson(
+            id: lesson.relativePath,
+            title: lesson.title,
+            relativePath: lesson.relativePath,
+            isCompleted: lesson.state.completed
+        )
     }
 
     private func selectLesson(relativePath: String) {
@@ -364,6 +369,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
             )
             applyLessonState(updatedState, relativePath: selectedLessonPath, classroom: &classroom)
             self.classroom = classroom
+            sidebar = Self.sidebar(from: classroom)
             selectedLesson = lesson(for: selectedLessonPath, in: classroom)
             updateProgressSummaries()
             errorMessage = nil

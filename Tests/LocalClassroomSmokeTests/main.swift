@@ -70,6 +70,7 @@ let sidebar = ClassroomBrowserViewModel.sidebar(from: classroom)
 expect(sidebar.title == classroom.name, "Sidebar title should match classroom name")
 expect(sidebar.modules.count == 2, "Sidebar should include scanned modules")
 expect(sidebar.modules[0].directLessons.map(\.title) == ["Lesson 2", "Lesson 10"], "Sidebar should map direct lessons")
+expect(sidebar.modules[0].directLessons.allSatisfy { !$0.isCompleted }, "Sidebar should expose incomplete lesson state")
 expect(sidebar.modules[0].categories[0].lessons.count == 2, "Sidebar should map category lessons")
 expect(sidebar.warningCount == classroom.warnings.count, "Sidebar should expose warning count")
 
@@ -274,6 +275,10 @@ await MainActor.run {
     progressViewModel.setSelectedLessonCompleted(true)
     expect(progressViewModel.selectedLesson?.state.completed == true, "Manual complete should update selected lesson state")
     expect(progressViewModel.classroomProgress.completedLessons == 1, "Classroom progress should count completed lessons")
+    expect(
+        progressViewModel.sidebar?.modules[0].directLessons.first(where: { $0.relativePath == "Module/Alpha.mp4" })?.isCompleted == true,
+        "Sidebar lesson state should update after manual completion"
+    )
     expect(progressViewModel.classroomProgress.percentage == 0.5, "Completion percentage should be correct")
 }
 

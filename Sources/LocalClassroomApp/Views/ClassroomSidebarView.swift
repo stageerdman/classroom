@@ -170,7 +170,8 @@ struct ClassroomSidebarView: View {
 
     private func lessonRow(_ lesson: SidebarLesson) -> some View {
         HStack {
-            Label(lesson.title, systemImage: "play.rectangle")
+            lessonIcon(isCompleted: lesson.isCompleted)
+            Text(lesson.title)
                 .lineLimit(1)
             Spacer()
         }
@@ -180,5 +181,13 @@ struct ClassroomSidebarView: View {
             onSelectLesson(lesson)
         }
         .tag(lesson.id)
+    }
+
+    private func lessonIcon(isCompleted: Bool) -> some View {
+        Image(systemName: isCompleted ? "checkmark.circle.fill" : "play.rectangle")
+            .symbolRenderingMode(.monochrome)
+            .foregroundColor(isCompleted ? Color(nsColor: .systemGreen) : Color.accentColor)
+            .frame(width: 18, alignment: .center)
+            .accessibilityHidden(true)
     }
 }
