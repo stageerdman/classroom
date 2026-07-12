@@ -7,6 +7,7 @@ struct ClassroomBrowserView: View {
     @StateObject private var playbackService = PlaybackService()
     @State private var selectedSidebarID: String?
     @State private var noteAutosaveTask: Task<Void, Never>?
+    @State private var noteEditorHeight: CGFloat = 180
 
     var body: some View {
         HStack(spacing: 0) {
@@ -88,8 +89,6 @@ struct ClassroomBrowserView: View {
                     }
 
                     notesEditor
-
-                    lessonNavigationControls
                 } else if let classroom = viewModel.classroom {
                     Text(classroom.name)
                         .font(.largeTitle)
@@ -113,59 +112,6 @@ struct ClassroomBrowserView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var lessonNavigationControls: some View {
-        HStack(spacing: 10) {
-            Button {
-                playbackService.seek(to: max(0, (playbackService.player?.currentTime().seconds ?? 0) - 10))
-            } label: {
-                Label("Back 10 Seconds", systemImage: "gobackward.10")
-            }
-            .disabled(playbackService.player == nil)
-
-            Button {
-                playbackService.seek(to: (playbackService.player?.currentTime().seconds ?? 0) + 10)
-            } label: {
-                Label("Forward 10 Seconds", systemImage: "goforward.10")
-            }
-            .disabled(playbackService.player == nil)
-
-            Picker("Speed", selection: Binding(
-                get: { playbackService.playbackRate },
-                set: { playbackService.setPlaybackRate($0) }
-            )) {
-                Text("0.5x").tag(Float(0.5))
-                Text("1x").tag(Float(1))
-                Text("1.25x").tag(Float(1.25))
-                Text("1.5x").tag(Float(1.5))
-                Text("2x").tag(Float(2))
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 260)
-            .disabled(playbackService.player == nil)
-
-            Spacer()
-
-            Button(action: selectPreviousLesson) {
-                Label("Previous", systemImage: "backward.end")
-            }
-            .disabled(viewModel.selectedLesson == nil)
-            .keyboardShortcut(.leftArrow, modifiers: [.command])
-
-            Button(action: selectNextLesson) {
-                Label("Next", systemImage: "forward.end")
-            }
-            .disabled(viewModel.selectedLesson == nil)
-            .keyboardShortcut(.rightArrow, modifiers: [.command])
-
-            if let errorMessage = playbackService.errorMessage {
-                Text(errorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-                    .lineLimit(2)
-            }
-        }
-    }
-
     private var notesEditor: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -186,9 +132,10 @@ struct ClassroomBrowserView: View {
                     get: { viewModel.noteText },
                     set: { viewModel.updateNoteText($0) }
                 ),
+                contentHeight: $noteEditorHeight,
                 onTextChange: scheduleNoteAutosave
             )
-            .frame(minHeight: 180)
+            .frame(minHeight: noteEditorHeight, maxHeight: noteEditorHeight)
 
             if let noteErrorMessage = viewModel.noteErrorMessage {
                 Text(noteErrorMessage)
@@ -229,16 +176,6 @@ struct ClassroomBrowserView: View {
         playbackService.resume(to: selectedLesson.state.playbackPositionSeconds)
     }
 
-    private func selectPreviousLesson() {
-        saveCurrentPlaybackProgress()
-        viewModel.selectPreviousLesson()
-    }
-
-    private func selectNextLesson() {
-        saveCurrentPlaybackProgress()
-        viewModel.selectNextLesson()
-    }
-
     private func saveCurrentPlaybackProgress() {
         playbackService.refreshSnapshot()
         viewModel.savePlaybackProgress(
@@ -256,11 +193,6 @@ struct ClassroomBrowserView: View {
             }
             viewModel.saveSelectedNoteIfNeeded()
         }
-    }
-
-    private func saveNotesNow() {
-        noteAutosaveTask?.cancel()
-        viewModel.saveSelectedNoteExplicitly()
     }
 
     private func formatTime(_ seconds: Double) -> String {

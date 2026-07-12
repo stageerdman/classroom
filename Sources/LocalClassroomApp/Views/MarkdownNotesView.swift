@@ -3,12 +3,14 @@ import SwiftUI
 
 struct MarkdownNotesView: NSViewRepresentable {
     @Binding var text: String
+    @Binding var contentHeight: CGFloat
     let onTextChange: () -> Void
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = true
+        scrollView.hasVerticalScroller = false
+        scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
 
         let textView = NSTextView()
@@ -33,6 +35,7 @@ struct MarkdownNotesView: NSViewRepresentable {
         scrollView.documentView = textView
         context.coordinator.textView = textView
         context.coordinator.applyMarkdownStyle()
+        context.coordinator.updateContentHeight()
 
         return scrollView
     }
@@ -46,20 +49,24 @@ struct MarkdownNotesView: NSViewRepresentable {
             textView.string = text
             context.coordinator.applyMarkdownStyle()
         }
+
+        context.coordinator.updateContentHeight()
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, onTextChange: onTextChange)
+        Coordinator(text: $text, contentHeight: $contentHeight, onTextChange: onTextChange)
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding private var text: String
+        @Binding private var contentHeight: CGFloat
         private let onTextChange: () -> Void
         weak var textView: NSTextView?
         private var isApplyingStyle = false
 
-        init(text: Binding<String>, onTextChange: @escaping () -> Void) {
+        init(text: Binding<String>, contentHeight: Binding<CGFloat>, onTextChange: @escaping () -> Void) {
             _text = text
+            _contentHeight = contentHeight
             self.onTextChange = onTextChange
         }
 
@@ -70,6 +77,7 @@ struct MarkdownNotesView: NSViewRepresentable {
 
             text = textView.string
             applyMarkdownStyle()
+            updateContentHeight()
             onTextChange()
         }
 
@@ -109,6 +117,29 @@ struct MarkdownNotesView: NSViewRepresentable {
 
             storage?.endEditing()
             textView.setSelectedRange(selectedRange)
+            updateContentHeight()
+        }
+
+        @MainActor func updateContentHeight() {
+            guard
+                let textView,
+                let layoutManager = textView.layoutManager,
+                let textContainer = textView.textContainer
+            else {
+                return
+            }
+
+            layoutManager.ensureLayout(for: textContainer)
+            let usedRect = layoutManager.usedRect(for: textContainer)
+            let measuredHeight = max(180, ceil(usedRect.height + (textView.textContainerInset.height * 2) + 12))
+
+            if abs(contentHeight - measuredHeight) > 1 {
+                DispatchQueue.main.async {
+                    self.contentHeight = measuredHeight
+                }
+            }
+
+            textView.frame.size.height = measuredHeight
         }
 
         @MainActor private func applyInlineMarkdown(pattern: String, font: NSFont) {
