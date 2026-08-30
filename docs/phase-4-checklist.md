@@ -12,12 +12,12 @@
 ## Automated Verification
 
 - `swift test`
-- `swift run LocalClassroomSmokeTests`
+- `swift run ClassroomSmokeTests`
 - `swift build`
 
 ## Manual Verification
 
-- Run `swift run LocalClassroom`.
+- Run `swift run Classroom`.
 - Open a classroom containing MP4, MOV, and M4V samples.
 - Select a lesson and play it.
 - Seek with the player and toolbar controls.

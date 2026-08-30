@@ -1,4 +1,4 @@
-# Local Classroom
+# Classroom
 
 A local-first macOS app that turns any folder into a browsable classroom —
 no upload, no duplication, no server. The folder structure is the source of
@@ -47,8 +47,8 @@ automatic migration.
 ```sh
 swift build
 swift test
-swift run LocalClassroomSmokeTests
-swift run LocalClassroom
+swift run ClassroomSmokeTests
+swift run Classroom
 ```
 
 To build the standalone `.app` launcher:
@@ -59,9 +59,9 @@ scripts/create-launcher-app.sh
 
 ## Project layout
 
-- `Sources/LocalClassroomCore` — non-UI, testable core (models, services,
+- `Sources/ClassroomCore` — non-UI, testable core (models, services,
   view models).
-- `Sources/LocalClassroomApp` — SwiftUI app and views.
+- `Sources/ClassroomApp` — SwiftUI app and views.
 - `Tests/` — unit and smoke tests.
 - `docs/` — phase-by-phase scope and verification checklists.
 - `updates/` — dated update folders tracking what shipped and why (see

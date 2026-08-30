@@ -6,7 +6,7 @@
 
 ## Summary
 
-Baseline build of Local Classroom, a local-first macOS app that turns any
+Baseline build of Classroom, a local-first macOS app that turns any
 selected folder of video files into a browsable classroom. No upload, no
 duplication, no server — the folder structure is the source of truth. Built
 incrementally in phases, each with automated tests and a manual verification
@@ -14,7 +14,7 @@ pass before moving on.
 
 ## What shipped
 
-- **Phase 0** — SwiftUI app skeleton, `LocalClassroomCore` module for
+- **Phase 0** — SwiftUI app skeleton, `ClassroomCore` module for
   testable non-UI code, smoke test target.
 - **Phase 1** — Folder-to-classroom scanning (classroom → module → category →
   lesson, 4 levels deep) driven purely by filesystem structure.
@@ -38,9 +38,9 @@ Full phase-by-phase scope and manual verification checklists live in
 ## Verification
 
 - `swift test`
-- `swift run LocalClassroomSmokeTests`
+- `swift run ClassroomSmokeTests`
 - `swift build`
-- Manual: open `Local Classroom.app`, point it at a folder with the
+- Manual: open `Classroom.app`, point it at a folder with the
   classroom/module/category/lesson structure, confirm scan, playback,
   completion state, and custom ordering all behave as specced.
 

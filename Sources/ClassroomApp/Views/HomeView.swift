@@ -1,4 +1,4 @@
-import LocalClassroomCore
+import ClassroomCore
 import SwiftUI
 
 struct HomeView: View {

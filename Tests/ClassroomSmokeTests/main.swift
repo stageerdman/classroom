@@ -1,4 +1,4 @@
-import LocalClassroomCore
+import ClassroomCore
 import Foundation
 
 struct NoopFolderAccessStore: FolderAccessStore {
@@ -15,7 +15,7 @@ func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
     }
 }
 
-expect(AppInfo.displayName == "Local Classroom", "Unexpected app display name")
+expect(AppInfo.displayName == "Classroom", "Unexpected app display name")
 
 let fileManager = FileManager.default
 
@@ -72,7 +72,7 @@ func lessonFolderURL(at base: URL, _ relativePath: String) -> URL {
 // MARK: - Scanner: lesson folders, markers, attachments, module descriptions
 
 let root = fileManager.temporaryDirectory
-    .appendingPathComponent("LocalClassroomScannerSmokeTests")
+    .appendingPathComponent("ClassroomScannerSmokeTests")
     .appendingPathComponent(UUID().uuidString)
 
 try createFile(at: root, "01 Foundations/description.md", text: "Foundations of the craft.")
@@ -136,7 +136,7 @@ expect(sidebar.modules[0].directLessons.allSatisfy { !$0.isCompleted }, "Sidebar
 expect(sidebar.modules[0].categories[0].lessons.count == 2, "Sidebar should map category lessons")
 expect(sidebar.warningCount == classroom.warnings.count, "Sidebar should expose warning count")
 
-let defaultsSuite = "LocalClassroomSmokeTests.\(UUID().uuidString)"
+let defaultsSuite = "ClassroomSmokeTests.\(UUID().uuidString)"
 guard let userDefaults = UserDefaults(suiteName: defaultsSuite) else {
     fatalError("Could not create smoke test user defaults")
 }
@@ -161,7 +161,7 @@ expect(recentStore.list().map(\.path) == [thirdRoot.standardizedFileURL.path], "
 
 // MARK: - View model: selection, navigation, and gallery/module state
 
-let viewModelDefaultsSuite = "LocalClassroomViewModelSmokeTests.\(UUID().uuidString)"
+let viewModelDefaultsSuite = "ClassroomViewModelSmokeTests.\(UUID().uuidString)"
 guard let viewModelDefaults = UserDefaults(suiteName: viewModelDefaultsSuite) else {
     fatalError("Could not create view model smoke test user defaults")
 }
@@ -316,7 +316,7 @@ expect(manuallyIncompleteState.completionOverride == .incomplete, "Manual incomp
 
 // MARK: - Progress summaries through the view model
 
-let progressDefaultsSuite = "LocalClassroomProgressSmokeTests.\(UUID().uuidString)"
+let progressDefaultsSuite = "ClassroomProgressSmokeTests.\(UUID().uuidString)"
 guard let progressDefaults = UserDefaults(suiteName: progressDefaultsSuite) else {
     fatalError("Could not create progress smoke test user defaults")
 }
@@ -386,7 +386,7 @@ expect(fileManager.fileExists(atPath: alphaNoteURL.path), "Saving notes should c
 let savedAlphaNoteText = try notesService.loadNotes(for: alphaLessonForNotes)
 expect(savedAlphaNoteText == "# Alpha\n\nPlain UTF-8 notes.", "Existing UTF-8 notes should load")
 
-let notesDefaultsSuite = "LocalClassroomNotesSmokeTests.\(UUID().uuidString)"
+let notesDefaultsSuite = "ClassroomNotesSmokeTests.\(UUID().uuidString)"
 guard let notesDefaults = UserDefaults(suiteName: notesDefaultsSuite) else {
     fatalError("Could not create notes smoke test user defaults")
 }
@@ -471,7 +471,7 @@ try makeLessonFolder(at: orderingRoot, "Module C/New")
 let appendedOrderingResult = metadataStore.loadMergeAndSave(classroom: ClassroomScanner().scan(rootURL: orderingRoot), now: secondMetadataDate)
 expect(appendedOrderingResult.classroom.modules.map(\.name) == ["Module B", "Module A", "Module C"], "New modules should append after saved order in natural order")
 
-let orderingDefaultsSuite = "LocalClassroomOrderingSmokeTests.\(UUID().uuidString)"
+let orderingDefaultsSuite = "ClassroomOrderingSmokeTests.\(UUID().uuidString)"
 guard let orderingDefaults = UserDefaults(suiteName: orderingDefaultsSuite) else {
     fatalError("Could not create ordering smoke test user defaults")
 }
@@ -502,4 +502,4 @@ let persistedOrderingMetadata = try metadataStore.load(rootURL: orderingRoot)
 expect(persistedOrderingMetadata.moduleOrder.isEmpty, "Reset module order should survive metadata reload")
 expect(persistedOrderingMetadata.lessonOrder["Module A"] == ["Lesson 2", "Lesson 10"], "Direct lesson order should survive metadata reload")
 
-print("LocalClassroomSmokeTests passed")
+print("ClassroomSmokeTests passed")

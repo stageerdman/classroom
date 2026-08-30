@@ -1,5 +1,5 @@
 import AppKit
-import LocalClassroomCore
+import ClassroomCore
 import SwiftUI
 
 struct ClassroomBrowserView: View {
@@ -64,7 +64,14 @@ struct ClassroomBrowserView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
+            if let wordmark = BrandImage.wordmark.image {
+                wordmark
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 220)
+            }
+
             ContentUnavailableView(
                 "No Classroom Open",
                 systemImage: "folder",

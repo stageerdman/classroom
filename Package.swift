@@ -3,40 +3,44 @@
 import PackageDescription
 
 let package = Package(
-    name: "LocalClassroom",
+    name: "Classroom",
     platforms: [
         .macOS(.v14)
     ],
     products: [
         .executable(
-            name: "LocalClassroom",
-            targets: ["LocalClassroomApp"]
+            name: "Classroom",
+            targets: ["ClassroomApp"]
         ),
         .executable(
-            name: "LocalClassroomSmokeTests",
-            targets: ["LocalClassroomSmokeTests"]
+            name: "ClassroomSmokeTests",
+            targets: ["ClassroomSmokeTests"]
         ),
         .library(
-            name: "LocalClassroomCore",
-            targets: ["LocalClassroomCore"]
+            name: "ClassroomCore",
+            targets: ["ClassroomCore"]
         )
     ],
     targets: [
         .target(
-            name: "LocalClassroomCore"
+            name: "ClassroomCore"
         ),
         .executableTarget(
-            name: "LocalClassroomApp",
-            dependencies: ["LocalClassroomCore"]
+            name: "ClassroomApp",
+            dependencies: ["ClassroomCore"],
+            resources: [
+                .copy("Resources/classroom-icon.png"),
+                .copy("Resources/classroom-wordmark.png")
+            ]
         ),
         .executableTarget(
-            name: "LocalClassroomSmokeTests",
-            dependencies: ["LocalClassroomCore"],
-            path: "Tests/LocalClassroomSmokeTests"
+            name: "ClassroomSmokeTests",
+            dependencies: ["ClassroomCore"],
+            path: "Tests/ClassroomSmokeTests"
         ),
         .testTarget(
-            name: "LocalClassroomCoreTests",
-            dependencies: ["LocalClassroomCore"]
+            name: "ClassroomCoreTests",
+            dependencies: ["ClassroomCore"]
         )
     ]
 )

@@ -12,12 +12,12 @@
 ## Automated Verification
 
 - `swift test`
-- `swift run LocalClassroomSmokeTests`
+- `swift run ClassroomSmokeTests`
 - `swift build`
 
 ## Manual Verification
 
-- Run `swift run LocalClassroom`.
+- Run `swift run Classroom`.
 - Open a classroom folder with the toolbar folder button.
 - Quit and reopen the app, then reopen the folder from Recent.
 - Select modules, categories, and lessons in the sidebar.

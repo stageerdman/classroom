@@ -12,12 +12,12 @@
 ## Automated Verification
 
 - `swift test`
-- `swift run LocalClassroomSmokeTests`
+- `swift run ClassroomSmokeTests`
 - `swift build`
 
 ## Manual Verification
 
-- Run `swift run LocalClassroom` or open `Local Classroom.app`.
+- Run `swift run Classroom` or open `Classroom.app`.
 - Open a classroom.
 - Reorder modules from the sidebar context menu or drag move support.
 - Reorder direct lessons and category lessons.

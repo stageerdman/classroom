@@ -1,12 +1,12 @@
-import LocalClassroomCore
+import ClassroomCore
 import SwiftUI
 
 @main
-struct LocalClassroomApp: App {
+struct ClassroomApp: App {
     @StateObject private var recentClassroomsMenuModel = RecentClassroomsMenuModel()
 
     var body: some Scene {
-        WindowGroup("Local Classroom") {
+        WindowGroup("Classroom") {
             HomeView()
         }
         .commands {

@@ -11,7 +11,7 @@
 ## Automated Verification
 
 - `swift test`
-- `swift run LocalClassroomSmokeTests`
+- `swift run ClassroomSmokeTests`
 - `swift build`
 
 ## Manual Verification

@@ -11,11 +11,11 @@
 ## Automated Verification
 
 - `swift test`
-- `swift run LocalClassroomSmokeTests`
+- `swift run ClassroomSmokeTests`
 - `swift build`
 
 ## Manual Verification
 
-- Run `swift run LocalClassroom`.
+- Run `swift run Classroom`.
 - Enter a classroom folder path in the developer parser.
 - Confirm parsed modules, categories, lessons, and warnings match Finder.

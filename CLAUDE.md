@@ -1,13 +1,13 @@
 # Working in this repo
 
-Local Classroom is a local-first macOS SwiftUI app (see
+Classroom is a local-first macOS SwiftUI app (see
 `local_classroom_codex_spec.md` for the product spec). This file defines how
 we work in this codebase — read it before making changes.
 
 ## Main principles
 
 1. **Maximum modularization.** Keep files, types, and functions small and
-   single-purpose. Split `LocalClassroomCore` by concern (`Models/`,
+   single-purpose. Split `ClassroomCore` by concern (`Models/`,
    `Services/`, `ViewModels/`) and keep views broken into small, composable
    pieces. The goal is that any change only requires reading a small,
    relevant slice of the codebase — not the whole project. If a file is
@@ -28,10 +28,10 @@ we work in this codebase — read it before making changes.
    Undocumented changes are treated as incomplete.
 
 4. **Always build.** Before considering a change finished, build it
-   (`swift build`, `swift test`, `swift run LocalClassroomSmokeTests`) and
+   (`swift build`, `swift test`, `swift run ClassroomSmokeTests`) and
    run the manual verification steps for the affected area. Then make sure
    the user is actually running the latest build — rebuild
-   `Local Classroom.app` via `scripts/create-launcher-app.sh` (or the current
+   `Classroom.app` via `scripts/create-launcher-app.sh` (or the current
    equivalent) so the launcher isn't stale, and tell the user to relaunch it.
    Never report a task complete on the strength of a diff alone.
 
@@ -68,5 +68,5 @@ scattering status in chat or commit messages alone.
 
 - `swift build`
 - `swift test`
-- `swift run LocalClassroomSmokeTests`
+- `swift run ClassroomSmokeTests`
 - Relevant manual verification checklist from `docs/` or the active update.

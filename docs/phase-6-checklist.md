@@ -13,12 +13,12 @@
 ## Automated Verification
 
 - `swift test`
-- `swift run LocalClassroomSmokeTests`
+- `swift run ClassroomSmokeTests`
 - `swift build`
 
 ## Manual Verification
 
-- Run `swift run LocalClassroom`.
+- Run `swift run Classroom`.
 - Open a classroom.
 - Write notes for a lesson and inspect the matching `.md` file in Finder.
 - Switch lessons and verify notes were saved.

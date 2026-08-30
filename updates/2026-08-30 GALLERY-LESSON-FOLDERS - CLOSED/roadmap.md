@@ -7,12 +7,12 @@ phase E adds the attachments surface the new structure unlocks; phase F is
 tests/fixtures/docs/build cleanup across the whole update.
 
 Reference: current relevant files —
-`Sources/LocalClassroomCore/Models/ClassroomModels.swift`,
-`Sources/LocalClassroomCore/Services/ClassroomScanner.swift`,
-`Sources/LocalClassroomCore/Models/ClassroomMetadata.swift`,
-`Sources/LocalClassroomCore/ViewModels/ClassroomBrowserViewModel.swift`,
-`Sources/LocalClassroomApp/Views/{ClassroomBrowserView,ClassroomSidebarView,HomeView}.swift`,
-`Sources/LocalClassroomApp/LocalClassroomApp.swift`.
+`Sources/ClassroomCore/Models/ClassroomModels.swift`,
+`Sources/ClassroomCore/Services/ClassroomScanner.swift`,
+`Sources/ClassroomCore/Models/ClassroomMetadata.swift`,
+`Sources/ClassroomCore/ViewModels/ClassroomBrowserViewModel.swift`,
+`Sources/ClassroomApp/Views/{ClassroomBrowserView,ClassroomSidebarView,HomeView}.swift`,
+`Sources/ClassroomApp/ClassroomApp.swift`.
 
 ---
 
@@ -52,7 +52,7 @@ Implement:
   entirely — no dual-mode scanning. This is the breaking change from
   `update.md`.
 
-Automated tests (`Tests/LocalClassroomCoreTests`):
+Automated tests (`Tests/ClassroomCoreTests`):
 
 - new fixture trees: lesson folder with marker + media + notes; marker-only
   (no media/notes); media without marker (must NOT be treated as a lesson);
@@ -116,7 +116,7 @@ navigation that replaces today's always-visible sidebar.
 
 Implement:
 
-- New `ClassroomGalleryView` (SwiftUI, `LocalClassroomApp/Views/`): grid of
+- New `ClassroomGalleryView` (SwiftUI, `ClassroomApp/Views/`): grid of
   module cards, no sidebar, no progress chrome at this level. Each card:
   bold module name, `description` text under it (omitted entirely if nil),
   and a progress indicator sourced from the existing
@@ -161,7 +161,7 @@ only inside a module and only shows that module's contents.
 Implement:
 
 - Remove the `Section("Recent")` block from `ClassroomSidebarView`.
-- In `LocalClassroomApp.swift`, add a `CommandGroup` (or `CommandMenu`)
+- In `ClassroomApp.swift`, add a `CommandGroup` (or `CommandMenu`)
   presenting `RecentClassroomStore.list()` as a submenu of File, each item
   posting the same open-recent action `ClassroomBrowserViewModel.openRecent`
   already implements — this is a UI relocation, not new recents logic.
@@ -219,7 +219,7 @@ Exit criterion: attachments are visible and openable exactly when present.
 
 Implement:
 
-- Replace/extend `Tests/LocalClassroomCoreTests` fixtures wholesale for the
+- Replace/extend `Tests/ClassroomCoreTests` fixtures wholesale for the
   new structure (marker files, media+notes+Attachments combinations,
   description.md) — old flat-lesson fixtures either removed or repurposed
   specifically to assert the breaking change.
@@ -234,7 +234,7 @@ Implement:
   as historical baseline, but note in `update.md`'s "why" that this update
   deliberately diverges from Section 3 of that spec.
 - Full verification pass: `swift build`, `swift test`,
-  `swift run LocalClassroomSmokeTests`, rebuild `Local Classroom.app` via
+  `swift run ClassroomSmokeTests`, rebuild `Classroom.app` via
   `scripts/create-launcher-app.sh`, manual checklist end to end.
 - Close the update: flip folder suffix `OPEN` → `CLOSED`, final summary pass
   on `update.md`.

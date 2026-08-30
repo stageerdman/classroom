@@ -1,6 +1,6 @@
 import Combine
 import Foundation
-import LocalClassroomCore
+import ClassroomCore
 
 /// Mirrors `RecentClassroomStore` for the File → Open Recent menu, which
 /// lives at the App/Commands level and has no direct reference to the

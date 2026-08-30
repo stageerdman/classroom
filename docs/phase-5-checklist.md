@@ -12,12 +12,12 @@
 ## Automated Verification
 
 - `swift test`
-- `swift run LocalClassroomSmokeTests`
+- `swift run ClassroomSmokeTests`
 - `swift build`
 
 ## Manual Verification
 
-- Run `swift run LocalClassroom`.
+- Run `swift run Classroom`.
 - Open a classroom with playable videos.
 - Play a lesson, pause midway, quit, reopen, and confirm resume.
 - Mark a lesson complete and incomplete.

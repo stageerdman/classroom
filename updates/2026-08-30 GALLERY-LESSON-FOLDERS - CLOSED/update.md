@@ -109,16 +109,16 @@ See `roadmap.md` for the phase-by-phase breakdown that was followed.
   `ClassroomBrowserView` rewritten as a router between gallery / module
   detail / empty state.
 - **Phase D** — Recents removed from the sidebar; File → Open Recent added
-  in `LocalClassroomApp.swift`, backed by a new `RecentClassroomsMenuModel`
+  in `ClassroomApp.swift`, backed by a new `RecentClassroomsMenuModel`
   that listens for the new `.recentClassroomsDidChange` notification posted
   by the view model.
 - **Phase E** — Attachments section in the lesson detail view, rendered
   only when `lesson.attachmentURLs` is non-empty; each attachment opens via
   `NSWorkspace`.
-- **Phase F** — `Tests/LocalClassroomSmokeTests/main.swift` rewritten
+- **Phase F** — `Tests/ClassroomSmokeTests/main.swift` rewritten
   end-to-end for lesson-folder fixtures (marker detection, ambiguous media,
   attachments, module descriptions, gallery/module navigation, ordering
-  keyed by folder name); `Tests/LocalClassroomCoreTests/SmokeTests.swift`
+  keyed by folder name); `Tests/ClassroomCoreTests/SmokeTests.swift`
   fixed (it referenced undefined `ModelNamespace`/etc. — a pre-existing,
   unrelated break — and was replaced with real `ClassroomScanner`
   coverage); `docs/phase-8-checklist.md` added; `README.md` structure
@@ -128,12 +128,12 @@ See `roadmap.md` for the phase-by-phase breakdown that was followed.
 ## Verification
 
 - `swift build` — clean.
-- `swift run LocalClassroomSmokeTests` — passed (only reliable way to
+- `swift run ClassroomSmokeTests` — passed (only reliable way to
   execute test assertions in this sandbox; see note below).
 - `swift test` — compiles cleanly against `@testable import
-  LocalClassroomCore`, but this sandboxed environment has no `xctest`
+  ClassroomCore`, but this sandboxed environment has no `xctest`
   runner (no Xcode Developer directory), so the XCTest bundle cannot
   actually execute here. Run it for real on a machine with Xcode installed.
 - Manual verification checklist: `docs/phase-8-checklist.md`. Not run
   live in this session (no way to drive a macOS GUI app from this
-  environment) — run it by hand after relaunching `Local Classroom.app`.
+  environment) — run it by hand after relaunching `Classroom.app`.

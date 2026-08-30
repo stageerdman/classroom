@@ -28,11 +28,11 @@ rationale. This is a breaking format change — classrooms using the old flat
 
 - `swift build`
 - `swift test`
-- `swift run LocalClassroomSmokeTests`
+- `swift run ClassroomSmokeTests`
 
 ## Manual Verification
 
-- Run `swift run LocalClassroom` or open `Local Classroom.app`.
+- Run `swift run Classroom` or open `Classroom.app`.
 - Build a fixture classroom on disk using the new structure: a module with
   `description.md`, a direct lesson folder (marker + media + notes), a
   category folder containing a lesson folder with an `Attachments/` folder,

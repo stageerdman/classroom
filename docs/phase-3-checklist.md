@@ -14,12 +14,12 @@
 ## Automated Verification
 
 - `swift test`
-- `swift run LocalClassroomSmokeTests`
+- `swift run ClassroomSmokeTests`
 - `swift build`
 
 ## Manual Verification
 
-- Run `swift run LocalClassroom`.
+- Run `swift run Classroom`.
 - Open a classroom folder.
 - Inspect `.local-classroom/classroom.json`.
 - Manually corrupt the JSON.

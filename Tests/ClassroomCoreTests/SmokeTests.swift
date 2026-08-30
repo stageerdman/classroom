@@ -3,12 +3,12 @@ import XCTest
 #else
 import Foundation
 #endif
-@testable import LocalClassroomCore
+@testable import ClassroomCore
 
 #if canImport(XCTest)
 final class SmokeTests: XCTestCase {
     func testAppInfoHasDisplayName() {
-        XCTAssertEqual(AppInfo.displayName, "Local Classroom")
+        XCTAssertEqual(AppInfo.displayName, "Classroom")
     }
 
     func testLessonFolderRequiresMarkerFile() throws {
@@ -79,7 +79,7 @@ final class SmokeTests: XCTestCase {
 
     private func makeTempDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LocalClassroomCoreTests")
+            .appendingPathComponent("ClassroomCoreTests")
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
@@ -108,7 +108,7 @@ final class SmokeTests: XCTestCase {
 }
 #else
 func smokeTestAppInfoHasDisplayName() {
-    precondition(AppInfo.displayName == "Local Classroom")
+    precondition(AppInfo.displayName == "Classroom")
 }
 
 func smokeTestPhaseFoldersAreReachable() {

@@ -1,4 +1,4 @@
-import LocalClassroomCore
+import ClassroomCore
 import SwiftUI
 
 /// Sidebar scoped to a single Module — shown after the user opens a module
