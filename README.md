@@ -6,10 +6,14 @@ truth: folder names become classrooms, modules, categories, and lessons.
 
 Opening a classroom shows a gallery of module cards (name, description,
 progress); opening a module reveals the sidebar of categories and lessons.
-See `local_classroom_codex_spec.md` for the original product and
-engineering spec, and
-`updates/2026-08-30 GALLERY-LESSON-FOLDERS - OPEN/update.md` for the
-gallery/lesson-folder update layered on top of it.
+Right-clicking a module card and choosing **Open as Editor** opens a
+structural editor for that module — reorder, create, rename, and Trash
+categories/lessons, transform a plain folder into a lesson, and drag files
+onto a lesson's media/notes/attachments. See
+`local_classroom_codex_spec.md` for the original product and engineering
+spec, `updates/2026-08-30 GALLERY-LESSON-FOLDERS - CLOSED/update.md` for
+the gallery/lesson-folder update, and
+`updates/2026-08-30 MODULE-EDITOR - CLOSED/update.md` for the editor.
 
 ## Structure
 
@@ -35,7 +39,11 @@ file — that's what lets a Lesson folder and a Category folder coexist at
 the same depth. A Lesson folder holds at most one playable media file
 (`.mp4`, `.mov`, `.m4v`, `.mp3`, `.m4a`, `.wav`), at most one `.md` notes
 file, and an optional `Attachments/` folder; attachments only show up in
-the UI when that folder is present and non-empty.
+the UI when that folder is present and non-empty. Removing an attachment
+from the editor moves it into a `Removed/` folder inside that lesson
+rather than deleting it — visible in the editor's raw file tree, invisible
+to normal browsing, same as `Attachments/` is until it's the recognized
+folder.
 
 This is a breaking format change from the original flat
 `Lesson Name.mp4` + `Lesson Name.md` layout — classrooms in the old format

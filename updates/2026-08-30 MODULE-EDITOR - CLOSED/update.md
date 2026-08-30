@@ -1,7 +1,8 @@
 # MODULE-EDITOR
 
-**Status:** OPEN
+**Status:** CLOSED
 **Opened:** 2026-08-30
+**Closed:** 2026-08-30
 
 ## Goal
 
@@ -133,12 +134,57 @@ to the one module that was right-clicked.
 
 ## Plan
 
-See `roadmap.md` for the phase breakdown.
+See `roadmap.md` for the phase-by-phase breakdown that was followed.
+
+## What shipped
+
+- **Phase A** — `MetadataMigrationService` (pure prefix-rewrite over
+  `lessonState`/`lessonOrder`/`categoryOrder`/`moduleOrder`, cascading
+  correctly for module/category/lesson rename and move) plus
+  `MetadataStore.migratePath`; `FileNode` + `ModuleFileTreeScanner` (the raw
+  per-module file tree, with `structuralKind` — category/lesson/untracked —
+  computed at scan time); `ClassroomScanner.defaultMediaExtensions`
+  promoted to a public constant; scanner hidden/visibility checks factored
+  into a shared `FileSystemVisibility` helper.
+- **Phase B** — `ClassroomEditorService`: transform-to-lesson (with
+  ambiguous media/notes detection and a subfolder/already-a-lesson guard),
+  create category/lesson, rename, move (reparent), Trash, `importFile`
+  (always a move, auto-disambiguates name collisions), attachment add/
+  remove (remove → lesson-local `Removed/`, never deletes), hero-media
+  replace (demotes the old file to `Attachments/`).
+- **Phase C** — `ClassroomEditorViewModel`: thin orchestration over
+  Phase A/B, plus its own saved-order-aware `orderedDirectLessons`/
+  `orderedCategories` (reusing `OrderingService` so the editor matches
+  normal browsing's custom order instead of always showing alphabetical).
+  Caught and fixed a real bug during this phase: `MetadataStore.
+  updateOrdering` throws against a classroom with no metadata file yet,
+  which normal browsing always creates first but the editor shouldn't
+  silently depend on — it now guarantees metadata exists on init.
+- **Phases D–F** — the editor UI: entry point on the gallery card's
+  context menu; `ModuleEditorView`'s two-pane shell (raw tree +
+  structured outline) with module name/description editing in the header;
+  `EditorStructuredOutlineView` (drag reorder, drag reparent, **+**
+  create, inline rename, Trash); `EditorFileTreeView` (raw tree, drag
+  source, Transform to Lesson); `TransformDisambiguationSheet`; and
+  `EditorLessonDetailView`'s three drop zones (hero media replace, notes
+  link-insert with no file movement, attachments add/remove).
+- **Phase G** — `docs/phase-9-checklist.md`, README updates, launcher app
+  rebuilt.
 
 ## Verification
 
-- `swift build`
-- `swift run ClassroomSmokeTests`
-- `swift test` (compiles; this sandbox can't execute the XCTest bundle — see
-  note in the GALLERY-LESSON-FOLDERS update)
-- Manual checklist: `docs/phase-9-checklist.md`
+- `swift build` — clean.
+- `swift run ClassroomSmokeTests` — passed, including new coverage for
+  transform, create/rename/move with metadata migration, import/
+  disambiguation, the `Removed/` attachment lifecycle, and saved-order
+  reordering — all verified with real execution against a real filesystem,
+  not just compiled.
+- `swift test` — compiles; this sandbox has no `xctest` runner to actually
+  execute the XCTest bundle (see the note in the GALLERY-LESSON-FOLDERS
+  update) — run it for real on a machine with Xcode installed.
+- The editor UI itself (drag-and-drop feel, layout, sheet presentation)
+  was never visually exercised in this session — there's no way to drive a
+  macOS GUI from this environment. It builds and type-checks cleanly, and
+  every operation it calls into is independently verified, but run through
+  `docs/phase-9-checklist.md` by hand before treating the interactions
+  themselves as confirmed.
