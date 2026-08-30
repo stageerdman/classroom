@@ -147,6 +147,45 @@ in-place-editing approach described above.
 - `TransformDisambiguationSheet` retargeted at
   `ClassroomBrowserViewModel.PendingTransform`.
 
+## Second revision: ghost entries
+
+Feedback after the in-place rework: editing still only showed the
+*recognized* structure — a loose file sitting next to a category, or an
+unmarked folder one level too deep inside a category (previously just an
+`.unsupportedDepth` warning), was invisible. The user wants to see
+everything that physically exists while editing, not just what's already
+been folded into the Lesson/Category model.
+
+Added **ghost entries** — while editing, anything on disk that doesn't
+correspond to a recognized Lesson or Category renders as a dimmed, italic
+row alongside the real ones, at every level:
+
+- **Module level**: loose files sitting next to category/lesson folders
+  (a folder here is never a ghost — any unmarked folder directly under a
+  module already reads as a Category by the existing model, so it's
+  already visible).
+- **Category level**: both loose files and unmarked subfolders — the
+  subfolder case is exactly what used to just produce an
+  `.unsupportedDepth` warning; a ghost folder here is a valid **Transform
+  to Lesson** target via its context menu, since adding the marker is
+  precisely what makes it a real nested lesson.
+- **Lesson level** (in the detail pane, once a lesson is selected): any
+  file or folder in that lesson's folder that isn't the chosen media, the
+  chosen notes, or the `Attachments`/`Removed` folders — e.g. a second
+  video that lost the media/notes disambiguation, or a stray file.
+
+`ClassroomEditorService` gained `ghostEntries(in:excludingNames:)` (generic,
+used for module/category level) and `lessonGhostEntries(lessonFolderURL:
+mediaURL:notesURL:)` (lesson level, since exclusion there is by exact file
+identity and case-insensitive folder name rather than a plain name set).
+`ClassroomBrowserViewModel` exposes thin pass-throughs
+(`ghostEntries(inRelativePath:excludingNames:)`,
+`ghostEntriesForSelectedLesson()`) and a URL-based
+`beginTransform(folderURL:)` so a ghost folder — which has no relative-path
+identity in the recognized structure yet — can still be transformed.
+Ghosts are computed live from the filesystem on each render rather than
+cached, so they never go stale after an edit.
+
 ## Verification
 
 - `swift build` — clean.
@@ -155,8 +194,11 @@ in-place-editing approach described above.
   of direct lessons and categories, create category, transform-to-lesson,
   move (reparent) with metadata migration, rename with metadata migration,
   module description update, module rename cascading metadata to nested
-  lessons, and Trash — all verified with real execution against a real
-  filesystem, not just compiled. Also caught and fixed a real test-fixture
+  lessons, Trash, and — added in the ghost-entries revision — module-,
+  category-, and lesson-level ghosts surfacing correctly and a ghost
+  folder successfully transforming into a real scanned lesson. All
+  verified with real execution against a real filesystem, not just
+  compiled. Also caught and fixed a real test-fixture
   mistake along the way (a loose untransformed folder reads as a Category
   too, so it must appear in category-order assertions).
 - `swift test` — compiles; this sandbox has no `xctest` runner to actually

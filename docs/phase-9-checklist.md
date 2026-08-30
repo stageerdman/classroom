@@ -29,6 +29,13 @@ need a real run-through before trusting them.
   drop to insert a Markdown link (nothing moves); attachments section
   accepts drops to add and shows an **X** per attachment to remove it
   (moves to that lesson's `Removed/` folder, never deletes).
+- **Ghost entries**: while editing, anything on disk not part of the
+  recognized structure — a loose file next to a category, an unmarked
+  folder one level too deep inside a category, or an extra file inside a
+  lesson folder — renders as a dimmed, italic row alongside the real ones,
+  at module, category, and lesson level respectively. A ghost folder
+  inside a category can be transformed into a lesson from its context
+  menu.
 
 ## Automated Verification
 
@@ -78,3 +85,20 @@ need a real run-through before trusting them.
 - Toggle **Edit** off, then back on for a different module — confirm no
   state leaks between modules (fresh module name/description fields,
   fresh selection).
+- Drop a stray file directly into a module folder in Finder (sibling to
+  its category/lesson folders) while the app is open; toggle editing on
+  and Refresh — confirm it appears as a dimmed "ghost" row, and that it
+  disappears the instant editing is turned off.
+- Create an unmarked subfolder one level too deep inside a category in
+  Finder; confirm it shows as a dimmed ghost folder row inside that
+  category (not just a warning), and that its context menu offers
+  **Transform to Lesson**; use it and confirm the folder becomes a real,
+  selectable lesson.
+- Select a lesson with an extra, unrecognized file sitting in its folder
+  (e.g. a second video that lost the disambiguation, or a stray text
+  file); confirm it appears under "Other Files In This Lesson" in the
+  detail pane, dimmed, below Attachments.
+- Confirm ghosts never appear anywhere when editing is off — this should
+  require no special checking, since ghost rendering is entirely gated
+  behind the same `isEditingModule` flag as every other editing
+  affordance.

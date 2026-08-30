@@ -52,6 +52,10 @@ struct ClassroomSidebarView: View {
                             newLessonName = ""
                             isAddingDirectLesson = false
                         }
+
+                        ForEach(moduleGhosts) { ghost in
+                            ghostRow(ghost)
+                        }
                     }
 
                     ForEach(module.categories) { category in
@@ -80,6 +84,10 @@ struct ClassroomSidebarView: View {
                                             .foregroundStyle(.secondary)
                                     }
                                     .buttonStyle(.plain)
+                                }
+
+                                ForEach(categoryGhosts(category)) { ghost in
+                                    ghostRow(ghost)
                                 }
                             }
                         } label: {
@@ -306,6 +314,38 @@ struct ClassroomSidebarView: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var moduleGhosts: [GhostEntry] {
+        let knownNames = Set(module.directLessons.map(\.title)).union(module.categories.map(\.name))
+        return viewModel.ghostEntries(inRelativePath: module.id, excludingNames: knownNames)
+    }
+
+    private func categoryGhosts(_ category: SidebarCategory) -> [GhostEntry] {
+        let knownNames = Set(category.lessons.map(\.title))
+        return viewModel.ghostEntries(inRelativePath: category.id, excludingNames: knownNames)
+    }
+
+    private func ghostRow(_ ghost: GhostEntry) -> some View {
+        HStack {
+            Image(systemName: ghost.isDirectory ? "folder" : "doc")
+                .foregroundStyle(.tertiary)
+                .frame(width: 18, alignment: .center)
+            Text(ghost.name)
+                .italic()
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+            Spacer()
+        }
+        .opacity(0.6)
+        .help("Not part of the lesson/category structure yet")
+        .contextMenu {
+            if ghost.isDirectory {
+                Button("Transform to Lesson") {
+                    viewModel.beginTransform(folderURL: ghost.url)
+                }
             }
         }
     }

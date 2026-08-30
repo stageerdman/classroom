@@ -661,4 +661,58 @@ await MainActor.run {
     expect(editingVM.selectedModule?.directLessons.contains { $0.title == "Lesson A" } != true, "Trashed lesson should no longer appear")
 }
 
+// MARK: - Ghost entries: everything on disk surfaces through the view model too
+
+try createFile(at: editingVMRoot, "Module A Renamed/Stray Notes.txt")
+try fileManager.createDirectory(
+    at: editingVMRoot.appendingPathComponent("Module A Renamed/New Category/Unmarked Nested Folder", isDirectory: true),
+    withIntermediateDirectories: true
+)
+try createFile(at: editingVMRoot, "Module A Renamed/New Category/Renamed Lesson/Unexpected.txt")
+
+await MainActor.run {
+    editingVM.refresh()
+
+    guard let module = editingVM.selectedModule else {
+        fatalError("Expected a selected module for ghost entry tests")
+    }
+
+    let moduleGhostNames = Set(
+        editingVM.ghostEntries(
+            inRelativePath: module.id,
+            excludingNames: Set(module.directLessons.map(\.title)).union(module.categories.map(\.name))
+        ).map(\.name)
+    )
+    expect(moduleGhostNames.contains("Stray Notes.txt"), "A loose file directly under the module should surface as a ghost")
+
+    guard let newCategory = module.categories.first(where: { $0.name == "New Category" }) else {
+        fatalError("Expected New Category for ghost entry tests")
+    }
+    let categoryGhostNames = Set(
+        editingVM.ghostEntries(
+            inRelativePath: newCategory.id,
+            excludingNames: Set(newCategory.lessons.map(\.title))
+        ).map(\.name)
+    )
+    expect(categoryGhostNames.contains("Unmarked Nested Folder"), "An unmarked folder inside a category should surface as a ghost, not just a warning")
+
+    guard let renamedLesson = newCategory.lessons.first(where: { $0.title == "Renamed Lesson" }) else {
+        fatalError("Expected Renamed Lesson for ghost entry tests")
+    }
+    editingVM.selectLesson(renamedLesson)
+    let lessonGhostNames = Set(editingVM.ghostEntriesForSelectedLesson().map(\.name))
+    expect(lessonGhostNames.contains("Unexpected.txt"), "An unexpected loose file inside a lesson folder should surface as a ghost")
+
+    // A ghost folder nested inside a category is a valid Transform to Lesson target.
+    let ghostFolderURL = editingVMRoot.appendingPathComponent("Module A Renamed/New Category/Unmarked Nested Folder", isDirectory: true)
+    editingVM.beginTransform(folderURL: ghostFolderURL)
+    expect(editingVM.errorMessage == nil, "Transforming an eligible ghost folder (no subfolders, no media/notes) should succeed without an error")
+}
+
+let ghostTransformScan = ClassroomScanner().scan(rootURL: editingVMRoot)
+let ghostTransformedLesson = ghostTransformScan.modules.first { $0.name == "Module A Renamed" }?
+    .categories.first { $0.name == "New Category" }?
+    .lessons.first { $0.title == "Unmarked Nested Folder" }
+expect(ghostTransformedLesson != nil, "The transformed ghost folder should now scan as a real lesson")
+
 print("ClassroomSmokeTests passed")

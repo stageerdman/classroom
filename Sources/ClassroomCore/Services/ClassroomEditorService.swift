@@ -68,6 +68,56 @@ public struct ClassroomEditorService {
         }
     }
 
+    // MARK: Ghosts — everything on disk that isn't part of the recognized structure
+
+    /// Every visible file/folder directly inside `folderURL` whose name
+    /// isn't in `knownNames` — i.e. not already a recognized Lesson or
+    /// Category. Used so the editor can show what exists on disk even
+    /// before it's been folded into the structure.
+    public func ghostEntries(in folderURL: URL, excludingNames knownNames: Set<String>) -> [GhostEntry] {
+        let children = (try? visibleChildren(of: folderURL)) ?? []
+        let ghosts = children.filter { !knownNames.contains($0.lastPathComponent) }
+
+        return sortedByName(ghosts).map { url in
+            GhostEntry(
+                id: url.path,
+                name: url.lastPathComponent,
+                url: url,
+                isDirectory: FileSystemVisibility.isDirectory(url)
+            )
+        }
+    }
+
+    /// Ghosts for inside a Lesson folder specifically — anything that isn't
+    /// its chosen media file, its chosen notes file, or the `Attachments`/
+    /// `Removed` folders (matched case-insensitively, same as the scanner).
+    public func lessonGhostEntries(lessonFolderURL: URL, mediaURL: URL?, notesURL: URL?) -> [GhostEntry] {
+        let children = (try? visibleChildren(of: lessonFolderURL)) ?? []
+        let reservedPaths = Set([mediaURL, notesURL].compactMap { $0?.standardizedFileURL.path })
+
+        let ghosts = children.filter { url in
+            if reservedPaths.contains(url.standardizedFileURL.path) {
+                return false
+            }
+            if FileSystemVisibility.isDirectory(url) {
+                let lowerName = url.lastPathComponent.lowercased()
+                if lowerName == ClassroomScanner.attachmentsFolderName || lowerName == ClassroomScanner.removedFolderName {
+                    return false
+                }
+            }
+            return true
+        }
+
+        return sortedByName(ghosts).map { url in
+            GhostEntry(
+                id: url.path,
+                name: url.lastPathComponent,
+                url: url,
+                isDirectory: FileSystemVisibility.isDirectory(url)
+            )
+        }
+    }
+
     // MARK: Create
 
     public func createCategory(in parentURL: URL, name: String) throws -> URL {

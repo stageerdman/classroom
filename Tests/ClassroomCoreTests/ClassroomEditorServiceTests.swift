@@ -6,6 +6,39 @@ final class ClassroomEditorServiceTests: XCTestCase {
     private let service = ClassroomEditorService()
     private let fileManager = FileManager.default
 
+    // MARK: Ghosts
+
+    func testGhostEntriesExcludesKnownNamesAndSurfacesTheRest() throws {
+        let folder = try makeTempDirectory()
+        defer { try? fileManager.removeItem(at: folder) }
+
+        try write(folder, "Stray.pdf")
+        try fileManager.createDirectory(at: folder.appendingPathComponent("Unmarked Folder"), withIntermediateDirectories: true)
+        _ = try service.createCategory(in: folder, name: "Known Category")
+
+        let ghosts = service.ghostEntries(in: folder, excludingNames: ["Known Category"])
+
+        XCTAssertEqual(Set(ghosts.map(\.name)), ["Stray.pdf", "Unmarked Folder"])
+        XCTAssertEqual(ghosts.first { $0.name == "Stray.pdf" }?.isDirectory, false)
+        XCTAssertEqual(ghosts.first { $0.name == "Unmarked Folder" }?.isDirectory, true)
+    }
+
+    func testLessonGhostEntriesExcludesMediaNotesAttachmentsAndRemoved() throws {
+        let lesson = try makeTempDirectory()
+        defer { try? fileManager.removeItem(at: lesson) }
+
+        let media = try write(lesson, "Video.mp4")
+        let notes = try write(lesson, "Notes.md")
+        try write(lesson, "Extra.mp4")
+        try fileManager.createDirectory(at: lesson.appendingPathComponent("Attachments"), withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: lesson.appendingPathComponent("Removed"), withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: lesson.appendingPathComponent("Unexpected Folder"), withIntermediateDirectories: true)
+
+        let ghosts = service.lessonGhostEntries(lessonFolderURL: lesson, mediaURL: media, notesURL: notes)
+
+        XCTAssertEqual(Set(ghosts.map(\.name)), ["Extra.mp4", "Unexpected Folder"])
+    }
+
     // MARK: Transform
 
     func testTransformAutoPicksSoleMediaAndNotesAndArchivesTheRest() throws {

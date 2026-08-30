@@ -108,6 +108,13 @@ struct ClassroomBrowserView: View {
                     if !selectedLesson.attachmentURLs.isEmpty || viewModel.isEditingModule {
                         attachmentsSection(selectedLesson.attachmentURLs)
                     }
+
+                    if viewModel.isEditingModule {
+                        let lessonGhosts = viewModel.ghostEntriesForSelectedLesson()
+                        if !lessonGhosts.isEmpty {
+                            lessonGhostsSection(lessonGhosts)
+                        }
+                    }
                 } else {
                     Text("Select a lesson from the sidebar.")
                         .foregroundStyle(.secondary)
@@ -283,6 +290,31 @@ struct ClassroomBrowserView: View {
                         }
                         return !urls.isEmpty
                     } isTargeted: { isTargetedAttachments = $0 }
+            }
+        }
+    }
+
+    private func lessonGhostsSection(_ ghosts: [GhostEntry]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Other Files In This Lesson")
+                .font(.headline)
+
+            Text("Not the chosen media/notes, and not in Attachments — still on disk, not part of the lesson yet.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ForEach(ghosts) { ghost in
+                HStack {
+                    Image(systemName: ghost.isDirectory ? "folder" : "doc")
+                        .foregroundStyle(.tertiary)
+                    Text(ghost.name)
+                        .italic()
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .opacity(0.6)
+                .draggable(ghost.url)
             }
         }
     }

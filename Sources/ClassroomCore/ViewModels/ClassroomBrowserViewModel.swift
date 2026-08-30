@@ -5,7 +5,6 @@ import Foundation
 public final class ClassroomBrowserViewModel: ObservableObject {
     public struct PendingTransform: Identifiable {
         public let id = UUID()
-        public let categoryID: String
         public let folderURL: URL
         public let candidates: ClassroomEditorService.TransformCandidates
     }
@@ -460,14 +459,40 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
     }
 
+    // MARK: Editing — ghosts (everything on disk not part of the recognized structure)
+
+    public func ghostEntries(inRelativePath relativePath: String, excludingNames knownNames: Set<String>) -> [GhostEntry] {
+        guard let folderURL = url(forRelativePath: relativePath) else {
+            return []
+        }
+        return editorService.ghostEntries(in: folderURL, excludingNames: knownNames)
+    }
+
+    public func ghostEntriesForSelectedLesson() -> [GhostEntry] {
+        guard let selectedLesson else {
+            return []
+        }
+        return editorService.lessonGhostEntries(
+            lessonFolderURL: selectedLesson.folderURL,
+            mediaURL: selectedLesson.mediaURL,
+            notesURL: selectedLesson.notesURL
+        )
+    }
+
     // MARK: Editing — transform to lesson
 
     public func beginTransform(categoryID: String) {
         guard let categoryURL = url(forRelativePath: categoryID) else {
             return
         }
+        beginTransform(folderURL: categoryURL)
+    }
 
-        let candidates = editorService.transformCandidates(for: categoryURL)
+    /// Also used for ghost folders, which aren't part of the recognized
+    /// structure yet and so have no relative-path identity of their own —
+    /// only a raw URL.
+    public func beginTransform(folderURL: URL) {
+        let candidates = editorService.transformCandidates(for: folderURL)
         guard candidates.canTransform else {
             errorMessage = Self.editorErrorMessage(
                 for: candidates.isAlreadyLesson ? ClassroomEditorService.EditorError.alreadyALesson : ClassroomEditorService.EditorError.hasSubfolders
@@ -476,9 +501,9 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
 
         if candidates.mediaFiles.count > 1 || candidates.notesFiles.count > 1 {
-            pendingTransform = PendingTransform(categoryID: categoryID, folderURL: categoryURL, candidates: candidates)
+            pendingTransform = PendingTransform(folderURL: folderURL, candidates: candidates)
         } else {
-            performTransform(folderURL: categoryURL, chosenMedia: nil, chosenNotes: nil)
+            performTransform(folderURL: folderURL, chosenMedia: nil, chosenNotes: nil)
         }
     }
 
