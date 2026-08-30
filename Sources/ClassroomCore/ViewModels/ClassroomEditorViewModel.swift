@@ -69,6 +69,10 @@ public final class ClassroomEditorViewModel: ObservableObject {
         rootURL.appendingPathComponent(moduleRelativePath, isDirectory: true)
     }
 
+    public func dismissError() {
+        errorMessage = nil
+    }
+
     public func refresh() {
         fileTree = fileTreeScanner.scan(moduleURL: moduleURL, rootURL: rootURL)
         let metadata = (try? metadataStore.load(rootURL: rootURL)) ?? ClassroomMetadata()
@@ -334,6 +338,10 @@ public final class ClassroomEditorViewModel: ObservableObject {
     /// Looks up a node anywhere in the current tree by its relative path
     /// (`FileNode.id`) — used to resolve a dropped file's URL back to its
     /// tracked node, if it has one.
+    public func node(forURL url: URL) -> FileNode? {
+        node(forRelativePath: relativePath(for: url))
+    }
+
     public func node(forRelativePath relativePath: String) -> FileNode? {
         func search(_ nodes: [FileNode]) -> FileNode? {
             for node in nodes {

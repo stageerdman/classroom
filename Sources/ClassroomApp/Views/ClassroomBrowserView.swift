@@ -8,6 +8,7 @@ struct ClassroomBrowserView: View {
     @State private var selectedSidebarID: String?
     @State private var noteAutosaveTask: Task<Void, Never>?
     @State private var noteEditorHeight: CGFloat = 180
+    @State private var editingModuleID: String?
 
     var body: some View {
         Group {
@@ -17,10 +18,34 @@ struct ClassroomBrowserView: View {
                 ClassroomGalleryView(
                     classroomName: classroom.name,
                     modules: viewModel.galleryModules,
-                    onOpenModule: viewModel.openModule
+                    onOpenModule: viewModel.openModule,
+                    onOpenEditor: { editingModuleID = $0 }
                 )
             } else {
                 emptyState
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { editingModuleID != nil },
+            set: { isPresented in
+                if !isPresented {
+                    editingModuleID = nil
+                    viewModel.refresh()
+                }
+            }
+        )) {
+            if
+                let editingModuleID,
+                let rootURL = viewModel.classroom?.rootURL,
+                let module = viewModel.classroom?.modules.first(where: { $0.relativePath == editingModuleID })
+            {
+                ModuleEditorView(
+                    rootURL: rootURL,
+                    moduleRelativePath: module.relativePath,
+                    moduleName: module.name,
+                    moduleDescription: module.description,
+                    onClose: { self.editingModuleID = nil }
+                )
             }
         }
         .onChange(of: viewModel.selectedLessonPath) { _, newValue in

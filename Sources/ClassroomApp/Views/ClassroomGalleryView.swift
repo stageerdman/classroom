@@ -5,6 +5,7 @@ struct ClassroomGalleryView: View {
     let classroomName: String
     let modules: [GalleryModule]
     let onOpenModule: (String) -> Void
+    let onOpenEditor: (String) -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 240, maximum: 320), spacing: 20)]
 
@@ -29,6 +30,9 @@ struct ClassroomGalleryView: View {
                         ForEach(modules) { module in
                             ModuleCardView(module: module)
                                 .onTapGesture { onOpenModule(module.id) }
+                                .contextMenu {
+                                    Button("Open as Editor") { onOpenEditor(module.id) }
+                                }
                         }
                     }
                     .padding(.horizontal, 32)
