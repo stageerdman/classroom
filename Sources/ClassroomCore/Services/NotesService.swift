@@ -16,8 +16,10 @@ public struct NotesService {
     }
 
     public func loadNotes(for lesson: Lesson) throws -> String {
-        let url = noteURL(for: lesson)
+        try loadNotes(at: noteURL(for: lesson))
+    }
 
+    public func loadNotes(at url: URL) throws -> String {
         guard fileManager.fileExists(atPath: url.path) else {
             return ""
         }

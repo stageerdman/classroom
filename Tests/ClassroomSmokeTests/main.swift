@@ -652,4 +652,42 @@ await MainActor.run {
 let afterModuleRename = try vmMetadataStore.load(rootURL: vmRoot)
 expect(afterModuleRename.lessonState["Module A Renamed/New Category/Renamed Lesson"]?.completed == true, "Module rename should cascade metadata to lessons nested under it")
 
+// MARK: - ClassroomEditorViewModel: ordering matches saved custom order
+
+let orderingVMRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
+try makeLessonFolder(at: orderingVMRoot, "Module/Lesson B")
+try makeLessonFolder(at: orderingVMRoot, "Module/Lesson A")
+try makeLessonFolder(at: orderingVMRoot, "Module/CategoryZ/Cat Lesson 2")
+try makeLessonFolder(at: orderingVMRoot, "Module/CategoryZ/Cat Lesson 1")
+try makeLessonFolder(at: orderingVMRoot, "Module/CategoryY/Other")
+
+let orderingEditorViewModel = await MainActor.run {
+    ClassroomEditorViewModel(rootURL: orderingVMRoot, moduleRelativePath: "Module", moduleName: "Module", moduleDescription: nil)
+}
+
+await MainActor.run {
+    expect(orderingEditorViewModel.orderedDirectLessons.map(\.name) == ["Lesson A", "Lesson B"], "Direct lessons should start in natural order")
+    expect(orderingEditorViewModel.orderedCategories.map(\.name) == ["CategoryY", "CategoryZ"], "Categories should start in natural order")
+
+    orderingEditorViewModel.moveDirectLessons(from: IndexSet(integer: 1), to: 0)
+    expect(orderingEditorViewModel.orderedDirectLessons.map(\.name) == ["Lesson B", "Lesson A"], "Moving a direct lesson should update saved order")
+
+    orderingEditorViewModel.moveCategories(from: IndexSet(integer: 1), to: 0)
+    expect(orderingEditorViewModel.orderedCategories.map(\.name) == ["CategoryZ", "CategoryY"], "Moving a category should update saved order")
+
+    let categoryZ = orderingEditorViewModel.orderedCategories.first { $0.name == "CategoryZ" }!
+    expect(categoryZ.children.map(\.name) == ["Cat Lesson 1", "Cat Lesson 2"], "Category lessons should start in natural order")
+    orderingEditorViewModel.moveCategoryLessons(categoryZ, from: IndexSet(integer: 1), to: 0)
+}
+
+let persistedOrderingVMMetadata = try MetadataStore().load(rootURL: orderingVMRoot)
+expect(persistedOrderingVMMetadata.lessonOrder["Module"] == ["Lesson B", "Lesson A"], "Direct lesson order should persist")
+expect(persistedOrderingVMMetadata.categoryOrder["Module"] == ["CategoryZ", "CategoryY"], "Category order should persist")
+expect(persistedOrderingVMMetadata.lessonOrder["Module/CategoryZ"] == ["Cat Lesson 2", "Cat Lesson 1"], "Category-scoped lesson order should persist")
+
+await MainActor.run {
+    let refreshedCategoryZ = orderingEditorViewModel.orderedCategories.first { $0.name == "CategoryZ" }!
+    expect(refreshedCategoryZ.children.map(\.name) == ["Cat Lesson 2", "Cat Lesson 1"], "Reordered category lessons should reflect saved order after refresh")
+}
+
 print("ClassroomSmokeTests passed")

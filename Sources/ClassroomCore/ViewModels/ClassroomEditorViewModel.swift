@@ -17,6 +17,14 @@ public final class ClassroomEditorViewModel: ObservableObject {
     @Published public private(set) var moduleName: String
     @Published public private(set) var moduleDescription: String
     @Published public private(set) var fileTree: [FileNode] = []
+    /// The module's direct lesson folders, in saved custom order (falling
+    /// back to natural sort for anything not yet ordered) — matches how
+    /// normal browsing orders them, so reordering here stays coherent with
+    /// the rest of the app.
+    @Published public private(set) var orderedDirectLessons: [FileNode] = []
+    /// The module's categories, in saved order, each with its own lessons
+    /// already ordered too.
+    @Published public private(set) var orderedCategories: [FileNode] = []
     @Published public private(set) var pendingTransform: PendingTransform?
     @Published public private(set) var errorMessage: String?
 
@@ -45,6 +53,15 @@ public final class ClassroomEditorViewModel: ObservableObject {
         self.fileTreeScanner = fileTreeScanner
         self.metadataStore = metadataStore
         self.notesService = notesService
+
+        // Normal browsing always merges/creates .local-classroom/classroom.json
+        // before the editor can be reached, but don't rely on that — make
+        // sure metadata exists so ordering updates below never fail against
+        // a genuinely fresh classroom.
+        if (try? metadataStore.load(rootURL: rootURL)) == nil {
+            try? metadataStore.save(ClassroomMetadata(), rootURL: rootURL)
+        }
+
         refresh()
     }
 
@@ -54,7 +71,71 @@ public final class ClassroomEditorViewModel: ObservableObject {
 
     public func refresh() {
         fileTree = fileTreeScanner.scan(moduleURL: moduleURL, rootURL: rootURL)
+        let metadata = (try? metadataStore.load(rootURL: rootURL)) ?? ClassroomMetadata()
+        let structure = orderedStructure(metadata: metadata)
+        orderedDirectLessons = structure.directLessons
+        orderedCategories = structure.categories
         errorMessage = nil
+    }
+
+    // MARK: Ordering
+
+    public func moveCategories(from source: IndexSet, to destination: Int) {
+        updateOrdering { [orderedCategories] metadata in
+            metadata.categoryOrder[self.moduleRelativePath] = OrderingService.moved(orderedCategories.map(\.name), from: source, to: destination)
+        }
+    }
+
+    public func moveDirectLessons(from source: IndexSet, to destination: Int) {
+        updateOrdering { [orderedDirectLessons] metadata in
+            metadata.lessonOrder[self.moduleRelativePath] = OrderingService.moved(orderedDirectLessons.map(\.name), from: source, to: destination)
+        }
+    }
+
+    public func moveCategoryLessons(_ categoryNode: FileNode, from source: IndexSet, to destination: Int) {
+        updateOrdering { metadata in
+            metadata.lessonOrder[categoryNode.id] = OrderingService.moved(categoryNode.children.map(\.name), from: source, to: destination)
+        }
+    }
+
+    private func orderedStructure(metadata: ClassroomMetadata) -> (directLessons: [FileNode], categories: [FileNode]) {
+        let lessons = fileTree.filter { $0.structuralKind == .lesson }
+        let categories = fileTree.filter { $0.structuralKind == .category }
+
+        let orderedLessons = OrderingService.ordered(
+            lessons,
+            savedOrder: metadata.lessonOrder[moduleRelativePath] ?? [],
+            id: { $0.name },
+            naturalKey: { $0.name }
+        )
+
+        let orderedCategories = OrderingService.ordered(
+            categories,
+            savedOrder: metadata.categoryOrder[moduleRelativePath] ?? [],
+            id: { $0.name },
+            naturalKey: { $0.name }
+        ).map { category -> FileNode in
+            var updated = category
+            let categoryLessons = category.children.filter { $0.structuralKind == .lesson }
+            updated.children = OrderingService.ordered(
+                categoryLessons,
+                savedOrder: metadata.lessonOrder[category.id] ?? [],
+                id: { $0.name },
+                naturalKey: { $0.name }
+            )
+            return updated
+        }
+
+        return (orderedLessons, orderedCategories)
+    }
+
+    private func updateOrdering(_ transform: @escaping (inout ClassroomMetadata) -> Void) {
+        do {
+            _ = try metadataStore.updateOrdering(rootURL: rootURL, transform: transform)
+            refresh()
+        } catch {
+            errorMessage = "Ordering could not be saved."
+        }
     }
 
     // MARK: Module identity
@@ -210,6 +291,62 @@ public final class ClassroomEditorViewModel: ObservableObject {
 
     public func notesLinkMarkdown(for fileURL: URL) -> String {
         editorService.notesLinkMarkdown(for: fileURL)
+    }
+
+    // MARK: Lesson content lookups (derived from the current file tree)
+
+    public func mediaURL(for lessonNode: FileNode) -> URL? {
+        lessonNode.children.first {
+            !$0.isDirectory && ClassroomScanner.defaultMediaExtensions.contains($0.url.pathExtension.lowercased())
+        }?.url
+    }
+
+    public func notesURL(for lessonNode: FileNode) -> URL {
+        lessonNode.children.first { !$0.isDirectory && $0.url.pathExtension.lowercased() == "md" }?.url
+            ?? lessonNode.url.appendingPathComponent(NotesService.defaultNotesFileName)
+    }
+
+    public func attachmentURLs(for lessonNode: FileNode) -> [URL] {
+        lessonNode.children
+            .first { $0.isDirectory && $0.name.lowercased() == ClassroomScanner.attachmentsFolderName }?
+            .children.filter { !$0.isDirectory }.map(\.url) ?? []
+    }
+
+    public func loadLessonNotes(for lessonNode: FileNode) -> String {
+        (try? notesService.loadNotes(at: notesURL(for: lessonNode))) ?? ""
+    }
+
+    public func saveLessonNotes(_ text: String, for lessonNode: FileNode) {
+        do {
+            try notesService.saveNotes(text, to: notesURL(for: lessonNode))
+        } catch {
+            errorMessage = "Notes could not be saved."
+        }
+    }
+
+    public func insertNotesLink(for fileURL: URL, into lessonNode: FileNode) {
+        let currentText = loadLessonNotes(for: lessonNode)
+        let separator = currentText.isEmpty || currentText.hasSuffix("\n") ? "" : "\n"
+        let updatedText = currentText + separator + notesLinkMarkdown(for: fileURL) + "\n"
+        saveLessonNotes(updatedText, for: lessonNode)
+    }
+
+    /// Looks up a node anywhere in the current tree by its relative path
+    /// (`FileNode.id`) — used to resolve a dropped file's URL back to its
+    /// tracked node, if it has one.
+    public func node(forRelativePath relativePath: String) -> FileNode? {
+        func search(_ nodes: [FileNode]) -> FileNode? {
+            for node in nodes {
+                if node.id == relativePath {
+                    return node
+                }
+                if let match = search(node.children) {
+                    return match
+                }
+            }
+            return nil
+        }
+        return search(fileTree)
     }
 
     // MARK: Private helpers
