@@ -502,4 +502,154 @@ let persistedOrderingMetadata = try metadataStore.load(rootURL: orderingRoot)
 expect(persistedOrderingMetadata.moduleOrder.isEmpty, "Reset module order should survive metadata reload")
 expect(persistedOrderingMetadata.lessonOrder["Module A"] == ["Lesson 2", "Lesson 10"], "Direct lesson order should survive metadata reload")
 
+// MARK: - Module editor: transform, create, rename, move, import, attachments
+
+let editorService = ClassroomEditorService()
+let editorRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
+try fileManager.createDirectory(at: editorRoot, withIntermediateDirectories: true)
+
+// Transform: sole media/notes auto-picked, extra loose file archived.
+let looseFolder = editorRoot.appendingPathComponent("Loose Folder", isDirectory: true)
+try fileManager.createDirectory(at: looseFolder, withIntermediateDirectories: true)
+try createFile(at: looseFolder, "Video.mp4")
+try createFile(at: looseFolder, "Notes.md")
+try createFile(at: looseFolder, "Extra.pdf")
+try editorService.transformToLesson(looseFolder)
+expect(fileManager.fileExists(atPath: looseFolder.appendingPathComponent(ClassroomScanner.lessonMarkerFileName).path), "Transform should add the lesson marker")
+expect(fileManager.fileExists(atPath: looseFolder.appendingPathComponent("Video.mp4").path), "Transform should leave the sole media file in place")
+expect(fileManager.fileExists(atPath: looseFolder.appendingPathComponent("Attachments/Extra.pdf").path), "Transform should archive unrelated loose files into Attachments")
+expect(!fileManager.fileExists(atPath: looseFolder.appendingPathComponent("Extra.pdf").path), "Archived file should no longer be loose")
+
+// Create + rename + move (reparent), with metadata migrating alongside.
+let editorScanResult = ClassroomScanner().scan(rootURL: editorRoot)
+let editorMetadataStore = MetadataStore()
+_ = editorMetadataStore.loadMergeAndSave(classroom: editorScanResult)
+
+let categoryA = try editorService.createCategory(in: editorRoot, name: "Category A")
+let categoryB = try editorService.createCategory(in: editorRoot, name: "Category B")
+let movedLesson = try editorService.createLesson(in: categoryA, name: "Movable")
+
+var editorMetadata = try editorMetadataStore.load(rootURL: editorRoot)
+editorMetadata.lessonState["Category A/Movable"] = LessonState(playbackPositionSeconds: 77, completed: true)
+try editorMetadataStore.save(editorMetadata, rootURL: editorRoot)
+
+let renamedLesson = try editorService.rename(movedLesson, to: "Renamed")
+_ = try editorMetadataStore.migratePath(rootURL: editorRoot, kind: .lesson, oldPath: "Category A/Movable", newPath: "Category A/Renamed")
+let afterRename = try editorMetadataStore.load(rootURL: editorRoot)
+expect(afterRename.lessonState["Category A/Renamed"]?.playbackPositionSeconds == 77, "Rename should preserve playback state under the new key")
+expect(afterRename.lessonState["Category A/Movable"] == nil, "Old key should be gone after rename migration")
+
+let reparented = try editorService.move(renamedLesson, into: categoryB)
+_ = try editorMetadataStore.migratePath(rootURL: editorRoot, kind: .lesson, oldPath: "Category A/Renamed", newPath: "Category B/Renamed")
+let afterMove = try editorMetadataStore.load(rootURL: editorRoot)
+expect(afterMove.lessonState["Category B/Renamed"]?.completed == true, "Move should preserve completion state under the new key")
+expect(fileManager.fileExists(atPath: reparented.path), "Moved lesson folder should exist at its new location")
+expect(!fileManager.fileExists(atPath: renamedLesson.path), "Moved lesson folder should no longer exist at its old location")
+
+// Import (move + disambiguate) and attachment lifecycle.
+let externalSourceDir = editorRoot.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
+try fileManager.createDirectory(at: externalSourceDir, withIntermediateDirectories: true)
+let externalFile = externalSourceDir.appendingPathComponent("Handout.pdf")
+try Data().write(to: externalFile)
+let addedAttachment = try editorService.addAttachment(lessonFolderURL: reparented, fileURL: externalFile)
+expect(!fileManager.fileExists(atPath: externalFile.path), "Importing an attachment should move the source, not copy it")
+expect(fileManager.fileExists(atPath: addedAttachment.path), "Attachment should land inside the lesson's Attachments folder")
+
+try editorService.removeAttachment(lessonFolderURL: reparented, attachmentURL: addedAttachment)
+expect(!fileManager.fileExists(atPath: addedAttachment.path), "Removed attachment should leave the Attachments folder")
+expect(fileManager.fileExists(atPath: reparented.appendingPathComponent("Removed/Handout.pdf").path), "Removed attachment should land in the lesson's Removed folder rather than being deleted")
+
+// Raw file tree surfaces Attachments/Removed but never the marker file itself.
+let editorTree = ModuleFileTreeScanner().scan(moduleURL: editorRoot, rootURL: editorRoot)
+let categoryBNode = editorTree.first { $0.name == "Category B" }
+let renamedNode = categoryBNode?.children.first { $0.name == "Renamed" }
+expect(renamedNode?.isLessonFolder == true, "Editor tree should flag the moved folder as a lesson")
+expect(renamedNode?.children.contains { $0.name == "Removed" } == true, "Editor tree should surface the Removed folder")
+expect(renamedNode?.children.contains { $0.name == ClassroomScanner.lessonMarkerFileName } != true, "Editor tree should never surface the raw marker file")
+
+// MARK: - ClassroomEditorViewModel: end-to-end through the orchestration layer
+
+let vmRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
+try createFile(at: vmRoot, "Module A/description.md", text: "Original description.")
+try fileManager.createDirectory(at: vmRoot.appendingPathComponent("Module A/Loose Folder", isDirectory: true), withIntermediateDirectories: true)
+try createFile(at: vmRoot, "Module A/Loose Folder/Video.mp4")
+
+let editorViewModel = await MainActor.run {
+    ClassroomEditorViewModel(
+        rootURL: vmRoot,
+        moduleRelativePath: "Module A",
+        moduleName: "Module A",
+        moduleDescription: "Original description."
+    )
+}
+
+await MainActor.run {
+    expect(editorViewModel.fileTree.contains { $0.name == "Loose Folder" }, "Editor view model should surface loose folders")
+
+    let looseNode = editorViewModel.fileTree.first { $0.name == "Loose Folder" }!
+    expect(looseNode.structuralKind == .category, "A loose folder directly under a module reads as a Category until it's transformed into a lesson")
+
+    editorViewModel.beginTransform(looseNode)
+    expect(editorViewModel.pendingTransform == nil, "A single unambiguous media candidate should not require a picker")
+    expect(editorViewModel.fileTree.first { $0.name == "Loose Folder" }?.isLessonFolder == true, "Transform should mark the folder as a lesson")
+
+    editorViewModel.createCategory(name: "New Category", in: nil)
+    expect(editorViewModel.fileTree.contains { $0.name == "New Category" && $0.structuralKind == .category }, "New category should appear as a tracked category node")
+}
+
+let vmMetadataStore = MetadataStore()
+_ = vmMetadataStore.loadMergeAndSave(classroom: ClassroomScanner().scan(rootURL: vmRoot))
+var vmMetadata = try vmMetadataStore.load(rootURL: vmRoot)
+vmMetadata.lessonState["Module A/Loose Folder"] = LessonState(playbackPositionSeconds: 33, completed: true)
+try vmMetadataStore.save(vmMetadata, rootURL: vmRoot)
+
+await MainActor.run {
+    editorViewModel.refresh()
+    let lessonNode = editorViewModel.fileTree.first { $0.name == "Loose Folder" }!
+    let categoryNode = editorViewModel.fileTree.first { $0.name == "New Category" }!
+
+    editorViewModel.move(lessonNode, into: categoryNode)
+    editorViewModel.refresh()
+}
+
+let afterVMMove = try vmMetadataStore.load(rootURL: vmRoot)
+expect(afterVMMove.lessonState["Module A/New Category/Loose Folder"]?.playbackPositionSeconds == 33, "Moving a lesson through the view model should preserve its state under the new key")
+expect(afterVMMove.lessonState["Module A/Loose Folder"] == nil, "Old key should be gone after a view-model-driven move")
+
+await MainActor.run {
+    editorViewModel.refresh()
+    let categoryNode = editorViewModel.fileTree.first { $0.name == "New Category" }!
+    let lessonNode = categoryNode.children.first { $0.name == "Loose Folder" }!
+    editorViewModel.rename(lessonNode, to: "Renamed Lesson")
+    editorViewModel.refresh()
+}
+
+let afterVMRename = try vmMetadataStore.load(rootURL: vmRoot)
+expect(afterVMRename.lessonState["Module A/New Category/Renamed Lesson"]?.completed == true, "Renaming a lesson through the view model should preserve completion state")
+
+await MainActor.run {
+    editorViewModel.updateModuleDescription("Updated description.")
+    expect(editorViewModel.moduleDescription == "Updated description.", "View model should track the edited description")
+}
+let savedDescription = try String(
+    contentsOf: vmRoot.appendingPathComponent("Module A/description.md"),
+    encoding: .utf8
+)
+expect(savedDescription == "Updated description.", "Description edits should save to description.md")
+
+await MainActor.run {
+    editorViewModel.refresh()
+    let categoryNode = editorViewModel.fileTree.first { $0.name == "New Category" }!
+    let lessonNode = categoryNode.children.first { $0.name == "Renamed Lesson" }!
+
+    editorViewModel.renameModule(to: "Module A Renamed")
+    expect(editorViewModel.moduleName == "Module A Renamed", "Renaming the module should update the view model's own identity")
+    expect(fileManager.fileExists(atPath: editorViewModel.moduleURL.path), "The renamed module folder should exist at the view model's updated moduleURL")
+
+    _ = lessonNode
+}
+
+let afterModuleRename = try vmMetadataStore.load(rootURL: vmRoot)
+expect(afterModuleRename.lessonState["Module A Renamed/New Category/Renamed Lesson"]?.completed == true, "Module rename should cascade metadata to lessons nested under it")
+
 print("ClassroomSmokeTests passed")

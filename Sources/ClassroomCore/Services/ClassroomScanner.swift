@@ -9,14 +9,19 @@ import Foundation
 public struct ClassroomScanner {
     public static let lessonMarkerFileName = ".lesson"
     public static let attachmentsFolderName = "attachments"
+    public static let removedFolderName = "removed"
+    /// Canonical capitalization used when the editor creates these folders.
+    public static let attachmentsFolderDisplayName = "Attachments"
+    public static let removedFolderDisplayName = "Removed"
     public static let moduleDescriptionFileName = "description.md"
+    public static let defaultMediaExtensions: Set<String> = ["mp4", "mov", "m4v", "mp3", "m4a", "wav"]
 
     private let fileManager: FileManager
     private let supportedMediaExtensions: Set<String>
 
     public init(
         fileManager: FileManager = .default,
-        supportedMediaExtensions: Set<String> = ["mp4", "mov", "m4v", "mp3", "m4a", "wav"]
+        supportedMediaExtensions: Set<String> = ClassroomScanner.defaultMediaExtensions
     ) {
         self.fileManager = fileManager
         self.supportedMediaExtensions = supportedMediaExtensions
@@ -48,8 +53,8 @@ public struct ClassroomScanner {
 
     private func scanModule(_ moduleURL: URL, rootURL: URL, warnings: inout [ClassroomWarning]) -> ClassroomModule {
         let children = visibleChildren(of: moduleURL, rootURL: rootURL, warnings: &warnings)
-        let fileChildren = children.filter { resourceValue(for: $0, keyPath: \.isRegularFile) == true }
-        let directoryChildren = children.filter { resourceValue(for: $0, keyPath: \.isDirectory) == true }
+        let fileChildren = children.filter { FileSystemVisibility.isRegularFile($0) }
+        let directoryChildren = children.filter { FileSystemVisibility.isDirectory($0) }
 
         var directLessons: [Lesson] = []
         var categories: [LessonCategory] = []
@@ -98,8 +103,8 @@ public struct ClassroomScanner {
 
     private func scanLesson(_ lessonURL: URL, rootURL: URL, warnings: inout [ClassroomWarning]) -> Lesson {
         let children = visibleChildren(of: lessonURL, rootURL: rootURL, warnings: &warnings)
-        let fileChildren = children.filter { resourceValue(for: $0, keyPath: \.isRegularFile) == true }
-        let directoryChildren = children.filter { resourceValue(for: $0, keyPath: \.isDirectory) == true }
+        let fileChildren = children.filter { FileSystemVisibility.isRegularFile($0) }
+        let directoryChildren = children.filter { FileSystemVisibility.isDirectory($0) }
         let lessonRelativePath = relativePath(for: lessonURL, rootURL: rootURL)
 
         let mediaCandidates = sortedByFileName(
@@ -134,7 +139,7 @@ public struct ClassroomScanner {
         let attachmentURLs = attachmentsDirectory.map { attachmentsURL in
             sortedByFileName(
                 visibleChildren(of: attachmentsURL, rootURL: rootURL, warnings: &warnings)
-                    .filter { resourceValue(for: $0, keyPath: \.isRegularFile) == true }
+                    .filter { FileSystemVisibility.isRegularFile($0) }
             )
         } ?? []
 
@@ -174,7 +179,7 @@ public struct ClassroomScanner {
         warnings: inout [ClassroomWarning]
     ) -> [URL] {
         visibleChildren(of: directoryURL, rootURL: rootURL, warnings: &warnings).filter { childURL in
-            resourceValue(for: childURL, keyPath: \.isDirectory) == true
+            FileSystemVisibility.isDirectory(childURL)
         }
     }
 
@@ -192,11 +197,11 @@ public struct ClassroomScanner {
             )
 
             return children.filter { childURL in
-                guard !isHidden(childURL) else {
+                guard !FileSystemVisibility.isHidden(childURL) else {
                     return false
                 }
 
-                if resourceValue(for: childURL, keyPath: \.isSymbolicLink) == true {
+                if FileSystemVisibility.isSymbolicLink(childURL) {
                     warnings.append(
                         ClassroomWarning(
                             kind: .symbolicLink,
@@ -224,19 +229,6 @@ public struct ClassroomScanner {
     private func directoryExists(at url: URL) -> Bool {
         var isDirectory: ObjCBool = false
         return fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
-    }
-
-    private func isHidden(_ url: URL) -> Bool {
-        url.lastPathComponent.hasPrefix(".") || resourceValue(for: url, keyPath: \.isHidden) == true
-    }
-
-    private func resourceValue<T>(for url: URL, keyPath: KeyPath<URLResourceValues, T?>) -> T? {
-        try? url.resourceValues(forKeys: [
-            .isDirectoryKey,
-            .isRegularFileKey,
-            .isHiddenKey,
-            .isSymbolicLinkKey
-        ])[keyPath: keyPath]
     }
 
     private func relativePath(for url: URL, rootURL: URL) -> String {

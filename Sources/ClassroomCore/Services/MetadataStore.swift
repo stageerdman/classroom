@@ -88,6 +88,21 @@ public struct MetadataStore {
         return metadata
     }
 
+    /// Rewrites metadata after an in-app rename or move so playback
+    /// position, completion state, and custom ordering follow the renamed
+    /// or moved node instead of being orphaned under its old path.
+    public func migratePath(
+        rootURL: URL,
+        kind: ClassroomNodeKind,
+        oldPath: String,
+        newPath: String
+    ) throws -> ClassroomMetadata {
+        let metadata = try load(rootURL: rootURL)
+        let migrated = MetadataMigrationService.migrate(metadata, kind: kind, oldPath: oldPath, newPath: newPath)
+        try save(migrated, rootURL: rootURL)
+        return migrated
+    }
+
     private func loadOrCreateMetadata(rootURL: URL, now: Date, warnings: inout [ClassroomWarning]) -> ClassroomMetadata {
         let url = metadataURL(rootURL: rootURL)
 
