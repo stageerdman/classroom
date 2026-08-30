@@ -13,12 +13,20 @@ public struct ClassroomSidebar: Equatable {
 public struct SidebarModule: Identifiable, Equatable {
     public let id: String
     public let name: String
+    public let description: String?
     public let directLessons: [SidebarLesson]
     public let categories: [SidebarCategory]
 
-    public init(id: String, name: String, directLessons: [SidebarLesson], categories: [SidebarCategory]) {
+    public init(
+        id: String,
+        name: String,
+        description: String? = nil,
+        directLessons: [SidebarLesson],
+        categories: [SidebarCategory]
+    ) {
         self.id = id
         self.name = name
+        self.description = description
         self.directLessons = directLessons
         self.categories = categories
     }

@@ -5,14 +5,17 @@ no upload, no duplication, no server. The folder structure is the source of
 truth: folder names become classrooms, modules, categories, and lessons.
 
 Opening a classroom shows a gallery of module cards (name, description,
-progress); opening a module reveals the sidebar of categories and lessons.
-Right-clicking a module card and choosing **Open as Editor** opens a
-structural editor for that module — reorder, create, rename, and Trash
-categories/lessons, transform a plain folder into a lesson, and drag files
-onto a lesson's media/notes/attachments. See
-`local_classroom_codex_spec.md` for the original product and engineering
-spec, `updates/2026-08-30 GALLERY-LESSON-FOLDERS - CLOSED/update.md` for
-the gallery/lesson-folder update, and
+progress); opening a module reveals the same sidebar of categories and
+lessons it always has. Right-clicking a module card (or the **Edit** button
+in an open module's sidebar) turns on editing directly in that same view —
+no separate editor screen. While editing you can rename the module,
+categories, and lessons in place; create new ones; drag a lesson to
+reorder or reparent it across categories; transform a plain folder into a
+lesson; Trash a category or lesson; and drop files onto a selected lesson's
+media, notes, or attachments. See `local_classroom_codex_spec.md` for the
+original product and engineering spec,
+`updates/2026-08-30 GALLERY-LESSON-FOLDERS - CLOSED/update.md` for the
+gallery/lesson-folder update, and
 `updates/2026-08-30 MODULE-EDITOR - CLOSED/update.md` for the editor.
 
 ## Structure

@@ -3,6 +3,13 @@ import Foundation
 
 @MainActor
 public final class ClassroomBrowserViewModel: ObservableObject {
+    public struct PendingTransform: Identifiable {
+        public let id = UUID()
+        public let categoryID: String
+        public let folderURL: URL
+        public let candidates: ClassroomEditorService.TransformCandidates
+    }
+
     @Published public private(set) var classroom: Classroom?
     @Published public private(set) var sidebar: ClassroomSidebar?
     @Published public private(set) var recentClassrooms: [RecentClassroom]
@@ -16,12 +23,15 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     @Published public private(set) var isNoteDirty = false
     @Published public private(set) var noteErrorMessage: String?
     @Published public private(set) var errorMessage: String?
+    @Published public private(set) var isEditingModule = false
+    @Published public private(set) var pendingTransform: PendingTransform?
 
     private let scanner: ClassroomScanner
     private let recentStore: RecentClassroomStore
     private let accessStore: FolderAccessStore
     private let metadataStore: MetadataStore
     private let notesService: NotesService
+    private let editorService: ClassroomEditorService
     private var currentRootURL: URL?
 
     public init(
@@ -29,13 +39,15 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         recentStore: RecentClassroomStore = RecentClassroomStore(),
         accessStore: FolderAccessStore = SecurityScopedFolderAccessStore(),
         metadataStore: MetadataStore = MetadataStore(),
-        notesService: NotesService = NotesService()
+        notesService: NotesService = NotesService(),
+        editorService: ClassroomEditorService = ClassroomEditorService()
     ) {
         self.scanner = scanner
         self.recentStore = recentStore
         self.accessStore = accessStore
         self.metadataStore = metadataStore
         self.notesService = notesService
+        self.editorService = editorService
         self.recentClassrooms = recentStore.list()
     }
 
@@ -77,7 +89,16 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     public func closeModule() {
         saveSelectedNoteIfNeeded()
         selectedModuleID = nil
+        isEditingModule = false
         clearSelectedLesson()
+    }
+
+    public func setEditingModule(_ isEditing: Bool) {
+        isEditingModule = isEditing
+    }
+
+    public func dismissError() {
+        errorMessage = nil
     }
 
     public func refresh() {
@@ -262,6 +283,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
                 SidebarModule(
                     id: module.relativePath,
                     name: module.name,
+                    description: module.description,
                     directLessons: module.directLessons.map(Self.sidebarLesson),
                     categories: module.categories.map { category in
                         SidebarCategory(
@@ -274,6 +296,263 @@ public final class ClassroomBrowserViewModel: ObservableObject {
             },
             warningCount: classroom.warnings.count
         )
+    }
+
+    // MARK: Editing — module
+
+    public func renameCurrentModule(to newName: String) {
+        guard let module = currentModuleModel(), let moduleURL = url(forRelativePath: module.relativePath) else {
+            return
+        }
+
+        do {
+            _ = try editorService.rename(moduleURL, to: newName)
+            let newRelativePath = trimmedName(newName)
+            try migratePath(kind: .module, oldPath: module.relativePath, newPath: newRelativePath)
+            selectedModuleID = newRelativePath
+            refresh()
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    public func updateCurrentModuleDescription(_ text: String) {
+        guard let module = currentModuleModel(), let moduleURL = url(forRelativePath: module.relativePath) else {
+            return
+        }
+
+        do {
+            try notesService.saveNotes(text, to: moduleURL.appendingPathComponent(ClassroomScanner.moduleDescriptionFileName))
+            refresh()
+        } catch {
+            errorMessage = "Description could not be saved."
+        }
+    }
+
+    // MARK: Editing — create
+
+    public func createDirectLesson(name: String) {
+        guard let module = currentModuleModel(), let moduleURL = url(forRelativePath: module.relativePath) else {
+            return
+        }
+
+        do {
+            _ = try editorService.createLesson(in: moduleURL, name: name)
+            refresh()
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    public func createCategory(name: String) {
+        guard let module = currentModuleModel(), let moduleURL = url(forRelativePath: module.relativePath) else {
+            return
+        }
+
+        do {
+            _ = try editorService.createCategory(in: moduleURL, name: name)
+            refresh()
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    public func createLesson(name: String, categoryID: String) {
+        guard let categoryURL = url(forRelativePath: categoryID) else {
+            return
+        }
+
+        do {
+            _ = try editorService.createLesson(in: categoryURL, name: name)
+            refresh()
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    // MARK: Editing — rename / move / trash
+
+    public func renameCategory(categoryID: String, to newName: String) {
+        guard let categoryURL = url(forRelativePath: categoryID) else {
+            return
+        }
+
+        do {
+            let newURL = try editorService.rename(categoryURL, to: newName)
+            try migratePath(kind: .category, oldPath: categoryID, newPath: relativePath(for: newURL))
+            refresh()
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    public func renameLesson(lessonID: String, to newName: String) {
+        guard let lessonURL = url(forRelativePath: lessonID) else {
+            return
+        }
+
+        do {
+            let newURL = try editorService.rename(lessonURL, to: newName)
+            try migratePath(kind: .lesson, oldPath: lessonID, newPath: relativePath(for: newURL))
+            if selectedLessonPath == lessonID {
+                selectedLessonPath = relativePath(for: newURL)
+            }
+            refresh()
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    /// `destinationCategoryID` is `nil` to move the lesson to the current
+    /// module's direct lessons.
+    public func moveLesson(lessonID: String, toCategoryID destinationCategoryID: String?) {
+        guard
+            let lessonURL = url(forRelativePath: lessonID),
+            let module = currentModuleModel(),
+            let moduleURL = url(forRelativePath: module.relativePath)
+        else {
+            return
+        }
+
+        let destinationURL = destinationCategoryID.flatMap { url(forRelativePath: $0) } ?? moduleURL
+
+        do {
+            let newURL = try editorService.move(lessonURL, into: destinationURL)
+            try migratePath(kind: .lesson, oldPath: lessonID, newPath: relativePath(for: newURL))
+            if selectedLessonPath == lessonID {
+                selectedLessonPath = relativePath(for: newURL)
+            }
+            refresh()
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    public func trashCategory(categoryID: String) {
+        guard let categoryURL = url(forRelativePath: categoryID) else {
+            return
+        }
+
+        do {
+            try editorService.trash(categoryURL)
+            if selectedLessonPath?.hasPrefix(categoryID + "/") == true {
+                clearSelectedLesson()
+            }
+            refresh()
+        } catch {
+            errorMessage = "Could not move to Trash."
+        }
+    }
+
+    public func trashLesson(lessonID: String) {
+        guard let lessonURL = url(forRelativePath: lessonID) else {
+            return
+        }
+
+        do {
+            try editorService.trash(lessonURL)
+            if selectedLessonPath == lessonID {
+                clearSelectedLesson()
+            }
+            refresh()
+        } catch {
+            errorMessage = "Could not move to Trash."
+        }
+    }
+
+    // MARK: Editing — transform to lesson
+
+    public func beginTransform(categoryID: String) {
+        guard let categoryURL = url(forRelativePath: categoryID) else {
+            return
+        }
+
+        let candidates = editorService.transformCandidates(for: categoryURL)
+        guard candidates.canTransform else {
+            errorMessage = Self.editorErrorMessage(
+                for: candidates.isAlreadyLesson ? ClassroomEditorService.EditorError.alreadyALesson : ClassroomEditorService.EditorError.hasSubfolders
+            )
+            return
+        }
+
+        if candidates.mediaFiles.count > 1 || candidates.notesFiles.count > 1 {
+            pendingTransform = PendingTransform(categoryID: categoryID, folderURL: categoryURL, candidates: candidates)
+        } else {
+            performTransform(folderURL: categoryURL, chosenMedia: nil, chosenNotes: nil)
+        }
+    }
+
+    public func resolvePendingTransform(chosenMedia: URL?, chosenNotes: URL?) {
+        guard let pendingTransform else {
+            return
+        }
+        performTransform(folderURL: pendingTransform.folderURL, chosenMedia: chosenMedia, chosenNotes: chosenNotes)
+        self.pendingTransform = nil
+    }
+
+    public func cancelPendingTransform() {
+        pendingTransform = nil
+    }
+
+    private func performTransform(folderURL: URL, chosenMedia: URL?, chosenNotes: URL?) {
+        do {
+            try editorService.transformToLesson(folderURL, chosenMedia: chosenMedia, chosenNotes: chosenNotes)
+            refresh()
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    // MARK: Editing — selected lesson's media / notes link / attachments
+
+    public func replaceSelectedLessonHeroMedia(fileURL: URL) {
+        guard let selectedLesson else {
+            return
+        }
+
+        do {
+            try editorService.replaceHeroMedia(lessonFolderURL: selectedLesson.folderURL, newMediaURL: fileURL)
+            refresh()
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    public func addAttachmentToSelectedLesson(fileURL: URL) {
+        guard let selectedLesson else {
+            return
+        }
+
+        do {
+            _ = try editorService.addAttachment(lessonFolderURL: selectedLesson.folderURL, fileURL: fileURL)
+            refresh()
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    public func removeAttachmentFromSelectedLesson(_ attachmentURL: URL) {
+        guard let selectedLesson else {
+            return
+        }
+
+        do {
+            try editorService.removeAttachment(lessonFolderURL: selectedLesson.folderURL, attachmentURL: attachmentURL)
+            refresh()
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    public func insertNotesLinkForSelectedLesson(fileURL: URL) {
+        guard selectedLesson != nil else {
+            return
+        }
+
+        let link = editorService.notesLinkMarkdown(for: fileURL)
+        let separator = noteText.isEmpty || noteText.hasSuffix("\n") ? "" : "\n"
+        updateNoteText(noteText + separator + link + "\n")
+        saveSelectedNoteExplicitly()
     }
 
     private func openResolvedURL(_ url: URL, shouldAddToRecent: Bool) {
@@ -510,6 +789,65 @@ public final class ClassroomBrowserViewModel: ObservableObject {
 
         return classroom.modules.flatMap { module in
             module.directLessons + module.categories.flatMap(\.lessons)
+        }
+    }
+
+    private func currentModuleModel() -> ClassroomModule? {
+        guard let selectedModuleID, let classroom else {
+            return nil
+        }
+        return classroom.modules.first { $0.relativePath == selectedModuleID }
+    }
+
+    private func url(forRelativePath relativePath: String) -> URL? {
+        guard let currentRootURL else {
+            return nil
+        }
+        return currentRootURL.appendingPathComponent(relativePath, isDirectory: true)
+    }
+
+    private func relativePath(for url: URL) -> String {
+        guard let currentRootURL else {
+            return url.lastPathComponent
+        }
+
+        let rootPath = currentRootURL.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+
+        guard path.hasPrefix(rootPath + "/") else {
+            return url.lastPathComponent
+        }
+
+        return String(path.dropFirst(rootPath.count + 1))
+    }
+
+    private func migratePath(kind: ClassroomNodeKind, oldPath: String, newPath: String) throws {
+        guard let currentRootURL, oldPath != newPath else {
+            return
+        }
+        _ = try metadataStore.migratePath(rootURL: currentRootURL, kind: kind, oldPath: oldPath, newPath: newPath)
+    }
+
+    private func trimmedName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func editorErrorMessage(for error: Error) -> String {
+        switch error as? ClassroomEditorService.EditorError {
+        case .emptyName:
+            return "Name cannot be empty."
+        case .invalidCharacters:
+            return "Names cannot contain \"/\" or \":\"."
+        case .nameCollision:
+            return "An item with that name already exists there."
+        case .sourceMissing:
+            return "The source file could not be found."
+        case .alreadyALesson:
+            return "This folder is already a lesson."
+        case .hasSubfolders:
+            return "This folder contains subfolders, so it can't be transformed directly."
+        case nil:
+            return "Something went wrong."
         }
     }
 

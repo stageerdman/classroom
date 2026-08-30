@@ -5,8 +5,8 @@ import SwiftUI
 /// more than one `.md` file in the folder — the user picks which one is
 /// the main one; everything else moves into `Attachments/`.
 struct TransformDisambiguationSheet: View {
-    let pending: ClassroomEditorViewModel.PendingTransform
-    @ObservedObject var viewModel: ClassroomEditorViewModel
+    let pending: ClassroomBrowserViewModel.PendingTransform
+    @ObservedObject var viewModel: ClassroomBrowserViewModel
 
     @State private var chosenMedia: URL?
     @State private var chosenNotes: URL?

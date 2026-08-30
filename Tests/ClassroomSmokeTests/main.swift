@@ -559,135 +559,106 @@ try editorService.removeAttachment(lessonFolderURL: reparented, attachmentURL: a
 expect(!fileManager.fileExists(atPath: addedAttachment.path), "Removed attachment should leave the Attachments folder")
 expect(fileManager.fileExists(atPath: reparented.appendingPathComponent("Removed/Handout.pdf").path), "Removed attachment should land in the lesson's Removed folder rather than being deleted")
 
-// Raw file tree surfaces Attachments/Removed but never the marker file itself.
-let editorTree = ModuleFileTreeScanner().scan(moduleURL: editorRoot, rootURL: editorRoot)
-let categoryBNode = editorTree.first { $0.name == "Category B" }
-let renamedNode = categoryBNode?.children.first { $0.name == "Renamed" }
-expect(renamedNode?.isLessonFolder == true, "Editor tree should flag the moved folder as a lesson")
-expect(renamedNode?.children.contains { $0.name == "Removed" } == true, "Editor tree should surface the Removed folder")
-expect(renamedNode?.children.contains { $0.name == ClassroomScanner.lessonMarkerFileName } != true, "Editor tree should never surface the raw marker file")
+// Normal scanning confirms the moved/renamed folder is recognized as a real
+// lesson (editorRoot doubles as the classroom root in this fixture, so
+// Category B reads as a module and Renamed as its direct lesson).
+let editorFinalScan = ClassroomScanner().scan(rootURL: editorRoot)
+let renamedLessonModel = editorFinalScan.modules.first { $0.name == "Category B" }?.directLessons.first { $0.title == "Renamed" }
+expect(renamedLessonModel != nil, "Scanner should recognize the moved/renamed folder as a lesson")
+expect(renamedLessonModel?.attachmentURLs.isEmpty == true, "Removed attachment should no longer count as a live attachment")
 
-// MARK: - ClassroomEditorViewModel: end-to-end through the orchestration layer
+// MARK: - ClassroomBrowserViewModel editing: transform, create, move, rename,
+// module rename/description, and ordering — all through the same view model
+// and views normal browsing uses, since editing is no longer a separate screen.
 
-let vmRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
-try createFile(at: vmRoot, "Module A/description.md", text: "Original description.")
-try fileManager.createDirectory(at: vmRoot.appendingPathComponent("Module A/Loose Folder", isDirectory: true), withIntermediateDirectories: true)
-try createFile(at: vmRoot, "Module A/Loose Folder/Video.mp4")
+let editingVMRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
+try createFile(at: editingVMRoot, "Module A/description.md", text: "Original description.")
+try createFile(at: editingVMRoot, "Module A/Loose Folder/Video.mp4")
+try makeLessonFolder(at: editingVMRoot, "Module A/Lesson B")
+try makeLessonFolder(at: editingVMRoot, "Module A/Lesson A")
+try makeLessonFolder(at: editingVMRoot, "Module A/CategoryZ/Cat Lesson 2")
+try makeLessonFolder(at: editingVMRoot, "Module A/CategoryZ/Cat Lesson 1")
+try makeLessonFolder(at: editingVMRoot, "Module A/CategoryY/Other")
 
-let editorViewModel = await MainActor.run {
-    ClassroomEditorViewModel(
-        rootURL: vmRoot,
-        moduleRelativePath: "Module A",
-        moduleName: "Module A",
-        moduleDescription: "Original description."
+let editingVMDefaultsSuite = "ClassroomBrowserEditSmokeTests.\(UUID().uuidString)"
+guard let editingVMDefaults = UserDefaults(suiteName: editingVMDefaultsSuite) else {
+    fatalError("Could not create editing smoke test user defaults")
+}
+defer {
+    editingVMDefaults.removePersistentDomain(forName: editingVMDefaultsSuite)
+}
+
+let editingVM = await MainActor.run {
+    ClassroomBrowserViewModel(
+        recentStore: RecentClassroomStore(userDefaults: editingVMDefaults),
+        accessStore: NoopFolderAccessStore()
     )
 }
 
 await MainActor.run {
-    expect(editorViewModel.fileTree.contains { $0.name == "Loose Folder" }, "Editor view model should surface loose folders")
+    editingVM.openFolder(editingVMRoot)
+    editingVM.openModule("Module A")
+    editingVM.setEditingModule(true)
+    expect(editingVM.isEditingModule, "Edit mode should turn on for the opened module")
 
-    let looseNode = editorViewModel.fileTree.first { $0.name == "Loose Folder" }!
-    expect(looseNode.structuralKind == .category, "A loose folder directly under a module reads as a Category until it's transformed into a lesson")
+    expect(editingVM.selectedModule?.directLessons.map(\.title) == ["Lesson A", "Lesson B"], "Direct lessons should start in natural order")
+    editingVM.moveDirectLesson(moduleID: "Module A", lessonID: "Module A/Lesson B", offset: -1)
+    expect(editingVM.selectedModule?.directLessons.map(\.title) == ["Lesson B", "Lesson A"], "Moving a direct lesson should update saved order, same mechanism as before editing existed")
 
-    editorViewModel.beginTransform(looseNode)
-    expect(editorViewModel.pendingTransform == nil, "A single unambiguous media candidate should not require a picker")
-    expect(editorViewModel.fileTree.first { $0.name == "Loose Folder" }?.isLessonFolder == true, "Transform should mark the folder as a lesson")
+    // "Loose Folder" has no .lesson marker yet, so it reads as a category too until it's transformed below.
+    expect(editingVM.selectedModule?.categories.map(\.name) == ["CategoryY", "CategoryZ", "Loose Folder"], "Categories should start in natural order")
+    editingVM.moveCategory(moduleID: "Module A", categoryID: "Module A/CategoryZ", offset: -1)
+    expect(editingVM.selectedModule?.categories.map(\.name) == ["CategoryZ", "CategoryY", "Loose Folder"], "Moving a category should update saved order")
 
-    editorViewModel.createCategory(name: "New Category", in: nil)
-    expect(editorViewModel.fileTree.contains { $0.name == "New Category" && $0.structuralKind == .category }, "New category should appear as a tracked category node")
+    editingVM.createCategory(name: "New Category")
+    expect(editingVM.selectedModule?.categories.contains { $0.name == "New Category" } == true, "New category should appear in the sidebar immediately")
+
+    editingVM.beginTransform(categoryID: "Module A/Loose Folder")
+    expect(editingVM.pendingTransform == nil, "A single unambiguous media candidate should not require a picker")
+    expect(editingVM.selectedModule?.directLessons.contains { $0.title == "Loose Folder" } == true, "Transform should turn the loose folder into a direct lesson")
 }
 
-let vmMetadataStore = MetadataStore()
-_ = vmMetadataStore.loadMergeAndSave(classroom: ClassroomScanner().scan(rootURL: vmRoot))
-var vmMetadata = try vmMetadataStore.load(rootURL: vmRoot)
-vmMetadata.lessonState["Module A/Loose Folder"] = LessonState(playbackPositionSeconds: 33, completed: true)
-try vmMetadataStore.save(vmMetadata, rootURL: vmRoot)
+let editingMetadataStore = MetadataStore()
+var editingMetadata = try editingMetadataStore.load(rootURL: editingVMRoot)
+editingMetadata.lessonState["Module A/Loose Folder"] = LessonState(playbackPositionSeconds: 33, completed: true)
+try editingMetadataStore.save(editingMetadata, rootURL: editingVMRoot)
 
 await MainActor.run {
-    editorViewModel.refresh()
-    let lessonNode = editorViewModel.fileTree.first { $0.name == "Loose Folder" }!
-    let categoryNode = editorViewModel.fileTree.first { $0.name == "New Category" }!
-
-    editorViewModel.move(lessonNode, into: categoryNode)
-    editorViewModel.refresh()
+    editingVM.refresh()
+    editingVM.moveLesson(lessonID: "Module A/Loose Folder", toCategoryID: "Module A/New Category")
 }
 
-let afterVMMove = try vmMetadataStore.load(rootURL: vmRoot)
-expect(afterVMMove.lessonState["Module A/New Category/Loose Folder"]?.playbackPositionSeconds == 33, "Moving a lesson through the view model should preserve its state under the new key")
-expect(afterVMMove.lessonState["Module A/Loose Folder"] == nil, "Old key should be gone after a view-model-driven move")
+let afterEditingMove = try editingMetadataStore.load(rootURL: editingVMRoot)
+expect(afterEditingMove.lessonState["Module A/New Category/Loose Folder"]?.playbackPositionSeconds == 33, "Moving a lesson via drag-to-reparent should preserve its state under the new key")
+expect(afterEditingMove.lessonState["Module A/Loose Folder"] == nil, "Old key should be gone after the move")
 
 await MainActor.run {
-    editorViewModel.refresh()
-    let categoryNode = editorViewModel.fileTree.first { $0.name == "New Category" }!
-    let lessonNode = categoryNode.children.first { $0.name == "Loose Folder" }!
-    editorViewModel.rename(lessonNode, to: "Renamed Lesson")
-    editorViewModel.refresh()
+    editingVM.renameLesson(lessonID: "Module A/New Category/Loose Folder", to: "Renamed Lesson")
 }
 
-let afterVMRename = try vmMetadataStore.load(rootURL: vmRoot)
-expect(afterVMRename.lessonState["Module A/New Category/Renamed Lesson"]?.completed == true, "Renaming a lesson through the view model should preserve completion state")
+let afterEditingRename = try editingMetadataStore.load(rootURL: editingVMRoot)
+expect(afterEditingRename.lessonState["Module A/New Category/Renamed Lesson"]?.completed == true, "Renaming a lesson inline should preserve completion state")
 
 await MainActor.run {
-    editorViewModel.updateModuleDescription("Updated description.")
-    expect(editorViewModel.moduleDescription == "Updated description.", "View model should track the edited description")
+    editingVM.updateCurrentModuleDescription("Updated description.")
 }
-let savedDescription = try String(
-    contentsOf: vmRoot.appendingPathComponent("Module A/description.md"),
+let savedEditingDescription = try String(
+    contentsOf: editingVMRoot.appendingPathComponent("Module A/description.md"),
     encoding: .utf8
 )
-expect(savedDescription == "Updated description.", "Description edits should save to description.md")
+expect(savedEditingDescription == "Updated description.", "Editing the module description inline should save to description.md")
 
 await MainActor.run {
-    editorViewModel.refresh()
-    let categoryNode = editorViewModel.fileTree.first { $0.name == "New Category" }!
-    let lessonNode = categoryNode.children.first { $0.name == "Renamed Lesson" }!
-
-    editorViewModel.renameModule(to: "Module A Renamed")
-    expect(editorViewModel.moduleName == "Module A Renamed", "Renaming the module should update the view model's own identity")
-    expect(fileManager.fileExists(atPath: editorViewModel.moduleURL.path), "The renamed module folder should exist at the view model's updated moduleURL")
-
-    _ = lessonNode
+    editingVM.renameCurrentModule(to: "Module A Renamed")
+    expect(editingVM.selectedModuleID == "Module A Renamed", "Renaming the module should update the view model's own selected module id so editing doesn't lose its place")
 }
 
-let afterModuleRename = try vmMetadataStore.load(rootURL: vmRoot)
-expect(afterModuleRename.lessonState["Module A Renamed/New Category/Renamed Lesson"]?.completed == true, "Module rename should cascade metadata to lessons nested under it")
-
-// MARK: - ClassroomEditorViewModel: ordering matches saved custom order
-
-let orderingVMRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
-try makeLessonFolder(at: orderingVMRoot, "Module/Lesson B")
-try makeLessonFolder(at: orderingVMRoot, "Module/Lesson A")
-try makeLessonFolder(at: orderingVMRoot, "Module/CategoryZ/Cat Lesson 2")
-try makeLessonFolder(at: orderingVMRoot, "Module/CategoryZ/Cat Lesson 1")
-try makeLessonFolder(at: orderingVMRoot, "Module/CategoryY/Other")
-
-let orderingEditorViewModel = await MainActor.run {
-    ClassroomEditorViewModel(rootURL: orderingVMRoot, moduleRelativePath: "Module", moduleName: "Module", moduleDescription: nil)
-}
+let afterEditingModuleRename = try editingMetadataStore.load(rootURL: editingVMRoot)
+expect(afterEditingModuleRename.lessonState["Module A Renamed/New Category/Renamed Lesson"]?.completed == true, "Module rename should cascade metadata to every lesson nested under it")
 
 await MainActor.run {
-    expect(orderingEditorViewModel.orderedDirectLessons.map(\.name) == ["Lesson A", "Lesson B"], "Direct lessons should start in natural order")
-    expect(orderingEditorViewModel.orderedCategories.map(\.name) == ["CategoryY", "CategoryZ"], "Categories should start in natural order")
-
-    orderingEditorViewModel.moveDirectLessons(from: IndexSet(integer: 1), to: 0)
-    expect(orderingEditorViewModel.orderedDirectLessons.map(\.name) == ["Lesson B", "Lesson A"], "Moving a direct lesson should update saved order")
-
-    orderingEditorViewModel.moveCategories(from: IndexSet(integer: 1), to: 0)
-    expect(orderingEditorViewModel.orderedCategories.map(\.name) == ["CategoryZ", "CategoryY"], "Moving a category should update saved order")
-
-    let categoryZ = orderingEditorViewModel.orderedCategories.first { $0.name == "CategoryZ" }!
-    expect(categoryZ.children.map(\.name) == ["Cat Lesson 1", "Cat Lesson 2"], "Category lessons should start in natural order")
-    orderingEditorViewModel.moveCategoryLessons(categoryZ, from: IndexSet(integer: 1), to: 0)
-}
-
-let persistedOrderingVMMetadata = try MetadataStore().load(rootURL: orderingVMRoot)
-expect(persistedOrderingVMMetadata.lessonOrder["Module"] == ["Lesson B", "Lesson A"], "Direct lesson order should persist")
-expect(persistedOrderingVMMetadata.categoryOrder["Module"] == ["CategoryZ", "CategoryY"], "Category order should persist")
-expect(persistedOrderingVMMetadata.lessonOrder["Module/CategoryZ"] == ["Cat Lesson 2", "Cat Lesson 1"], "Category-scoped lesson order should persist")
-
-await MainActor.run {
-    let refreshedCategoryZ = orderingEditorViewModel.orderedCategories.first { $0.name == "CategoryZ" }!
-    expect(refreshedCategoryZ.children.map(\.name) == ["Cat Lesson 2", "Cat Lesson 1"], "Reordered category lessons should reflect saved order after refresh")
+    editingVM.trashLesson(lessonID: "Module A Renamed/Lesson A")
+    expect(editingVM.selectedModule?.directLessons.contains { $0.title == "Lesson A" } != true, "Trashed lesson should no longer appear")
 }
 
 print("ClassroomSmokeTests passed")

@@ -6,100 +6,93 @@
 
 ## Goal
 
-Add a structural editor for a module's contents, reachable by right-clicking
-a module card in the gallery and choosing **"Open as Editor."** Today the
-only way to restructure a classroom is by hand in Finder; this update adds
-an in-app editor that can see and rearrange everything on disk inside one
-module — including the loose, unclassified files/folders that the normal
-scanner ignores — without ever silently losing the user's saved progress,
-completion state, or custom order.
+Let the user restructure a classroom from inside the app instead of by hand
+in Finder: reorder, create, rename, and Trash categories/lessons; turn a
+plain folder into a lesson; and manage a lesson's media/notes/attachments —
+all without ever silently losing saved progress, completion state, or
+custom order.
 
-The editor is a separate mode from normal browsing (`ClassroomBrowserView`
-stays exactly as shipped). It opens as a modal sheet over the gallery, scoped
-to the one module that was right-clicked.
+## Revision: editing lives in the existing view, not a separate screen
 
-### What it does
+The first version of this update built a dedicated two-pane editor screen
+(a raw file/folder tree on the left, a differently-styled outline and
+lesson panel on the right), opened as a modal sheet over the gallery. After
+seeing it, the user rejected it outright: *"the UI is terrible... must look
+exactly as when you open the module - IDENTICAL. And everything must be
+editable there."*
 
-1. **Two-pane layout.** Left: a raw file/folder tree of the module's actual
-   filesystem contents (including folders the normal scanner would treat as
-   opaque, like `Attachments/` and the new `Removed/` folder — see below).
-   Right: the structured Category/Lesson outline, reorderable by drag (reuses
-   the existing ordering system), with **+** buttons to create a new Category
-   or Lesson.
+That's a real, correct call — a bespoke screen that looks nothing like the
+rest of the app is bad UX regardless of what it can do. The whole thing was
+rebuilt around a different premise: **editing is a mode of the exact same
+sidebar and detail pane normal browsing already uses**, not a different
+view. `ClassroomSidebarView` and `ClassroomBrowserView`'s detail pane are
+unchanged in their non-editing form — pixel-identical to before this
+update — and gain inline affordances only when `viewModel.isEditingModule`
+is on:
 
-2. **Transform to Lesson.** Right-click any plain folder in the raw tree →
-   "Transform to Lesson." This adds the hidden `.lesson` marker file. If the
-   folder has more than one playable file, the user is prompted to pick the
-   main one; same for `.md` files. Every other loose file at that folder's
-   top level moves into an `Attachments/` folder (created if it doesn't
-   exist). Pre-existing subfolders are left untouched. Disabled if the
-   folder already contains subfolders (ambiguous — could already be a
-   Category), or is already a lesson.
+- Module name and description become editable text fields in the sidebar's
+  section header.
+- Lesson and category rows get inline rename, a drag handle for reorder
+  (reusing the ordering system that already existed) and reparent, and
+  context-menu Rename/Transform to Lesson/Move to Trash.
+- **+** rows appear to create a new direct lesson, a lesson inside a
+  category, or a new category.
+- The lesson detail pane's media area becomes a drop zone that replaces
+  the hero media (demoting the old file to `Attachments/`); the notes area
+  becomes a drop zone that inserts a Markdown link without moving
+  anything; the attachments section grows a drop zone to add files and an
+  **X** per attachment to remove one.
 
-3. **Create / drag / reparent.** New Categories and Lessons can be created
-   via **+**, immediately rename-in-place (like Finder's "untitled folder"),
-   and dragged anywhere in the module — including across categories, since
-   this is a real move on disk, not just a metadata reorder.
+This also simplified the underlying design a lot. The original version
+needed a parallel raw-filesystem-tree data model (`FileNode`,
+`ModuleFileTreeScanner`) and a second view model
+(`ClassroomEditorViewModel`) specifically because the bespoke screen needed
+to show *un*recognized loose files/folders that the normal sidebar doesn't
+display. Once editing happens inside the normal sidebar, that's no longer
+needed: under the marker-file model, any folder directly under a module
+that isn't yet a lesson already reads as a **Category** — so it's already
+visible, and "Transform to Lesson" is just a context-menu action on a
+Category row. All editing operations now live directly on
+`ClassroomBrowserViewModel`, calling straight into `ClassroomEditorService`
+and `MetadataStore.migratePath`. `FileNode`, `ModuleFileTreeScanner`, and
+`ClassroomEditorViewModel` were deleted; `ClassroomEditorService` and
+`MetadataMigrationService` (the actual file-operation and metadata-safety
+logic) were unaffected by the rework and are reused as-is.
 
-4. **Three lesson drop zones**, once a lesson is open in the editor's detail
-   panel:
-   - **Hero (media)** — drop a playable file here to replace the lesson's
-     media. The old media (if any) moves into `Attachments/` rather than
-     being deleted.
-   - **Notes text** — drop any file here to insert a Markdown link to it
-     at its current location. Nothing is moved or copied — this is the one
-     lightweight zone that just references a file in place.
-   - **Attachments** — drop a file here to add it as an attachment (moves
-     it into `Attachments/`, creating the folder if needed).
+## Entry points
 
-   All three accept drags from Finder or from the editor's own raw-tree
-   panel.
-
-5. **Removing an attachment** (the **X** next to it) doesn't delete it — it
-   moves the file into a `Removed/` folder inside that same lesson. This
-   folder is visible in the editor's raw tree (so nothing is silently lost)
-   but invisible to normal browsing, exactly like `Attachments/` already is
-   unless it's the recognized one.
-
-6. **Drag out to Finder.** Dragging an attachment (from the lesson panel or
-   the raw tree) out to Finder moves the real file there — this relies on
-   standard macOS drag behavior for a genuine `file://` URL, not a custom
-   "delete after drop" step.
-
-7. **Rename / Trash / edit description.** Any Module, Category, or Lesson
-   can be renamed in place. Module and Category get a Trash action (real
-   macOS Trash, recoverable). The module's `description.md` (used on its
-   gallery card) is editable directly in the editor's header, autosaved like
-   lesson notes.
+- Right-click a module card in the gallery → **"Open as Editor"** — opens
+  the module with editing already switched on.
+- An **Edit** / **Done** toggle in an already-open module's sidebar header
+  (next to the back button) — lets you turn editing on or off without
+  leaving the module.
 
 ## Decisions locked in during scoping
 
 - **Dragging a file in from Finder moves it**, not copies it — consistent
-  across both directions (drag out already had to be a move per how Finder
-  drag-and-drop works with a real file URL; drag in matches it rather than
-  behaving asymmetrically).
-- **Deleting a whole Lesson or Category goes to the real macOS Trash**
+  with dragging an attachment *out* to Finder, which is necessarily a move
+  once a real `file://` URL is involved.
+- **Deleting a whole Category or Lesson goes to the real macOS Trash**
   (`FileManager.trashItem`) — distinct from the attachment-level `Removed/`
-  folder, which stays inside the classroom on purpose so it shows up in the
-  editor's raw tree. Trash is for "get this out of the classroom entirely,
-  but recoverably"; `Removed/` is for "keep this in the classroom but out of
-  the way."
-- **The editor is scoped to one module**, matching its entry point (right-
-  click that module's card). It doesn't show sibling modules.
+  folder, which stays inside the lesson on purpose. Trash is "get this out
+  of the classroom entirely, but recoverably"; `Removed/` is "keep it in
+  the classroom but out of the way," and isn't shown to normal browsing for
+  the same reason `Attachments/` isn't shown unless it's the recognized
+  folder — no scanner change was needed for this, it was already true.
 
 ## Edge cases identified and designed for
 
 - **Metadata must survive rename and move.** A Lesson's identity key is its
   relative path, which changes on rename or reparent. Without explicit
   handling this would silently orphan playback position, completion, and
-  custom order — exactly the failure mode the original spec's "In-App Rename
-  Behavior" section warned about. This update adds a dedicated
-  `MetadataMigrationService` that rewrites `lessonState`/`lessonOrder`/
-  `categoryOrder`/`moduleOrder` keys and values by path prefix, cascading
-  correctly whether a Module, Category, or Lesson is the thing being renamed
-  or moved (renaming a Module or Category cascades into every lesson beneath
-  it; moving a Lesson to a new parent drops its old ordering reference and
-  lets it re-append naturally, matching how newly-discovered items already
+  custom order — exactly the failure mode the original product spec's
+  "In-App Rename Behavior" section warned about. `MetadataMigrationService`
+  rewrites `lessonState`/`lessonOrder`/`categoryOrder`/`moduleOrder` keys
+  and values by path prefix, cascading correctly whether a Module,
+  Category, or Lesson is the thing being renamed or moved (renaming a
+  Module or Category cascades into every lesson beneath it; moving a
+  Lesson to a new parent drops its old ordering reference and lets it
+  re-append naturally, matching how newly-discovered items already
   behave).
 - **Name collisions.** Rename/move reject a destination name that already
   exists (matches the original spec's rename validation rules — no silent
@@ -109,82 +102,69 @@ to the one module that was right-clicked.
 - **Empty/whitespace-only names** are rejected, same as the original spec's
   rename rules; `/` and `:` are rejected too.
 - **"Transform to Lesson" on a folder that already has subfolders** is
-  disabled in the UI — transform only has well-defined behavior for a folder
-  of loose files, and a folder with subfolders might already be functioning
-  as a Category.
-- **Renaming the Module itself** (not just its contents) is supported from
-  the editor header, since that's a natural thing to want once you're
-  editing a module. It updates the editor's own "which module is open"
-  tracking so it doesn't lose its place mid-rename.
-- **The `Removed/` folder is invisible to normal browsing "for free"** — the
-  scanner already only recognizes a folder literally named `Attachments` as
-  attachments; anything else sitting alongside a lesson's files (like
-  `Removed/`) was already ignored before this update. No scanner change
-  needed to hide it from end users; only the editor's raw tree needs to
-  reveal it deliberately.
-- **No live-playback conflict.** The editor is entered from the gallery
-  (right-click a module card), not from an already-open module/player view,
-  so there's no scenario where the editor and the normal player are open on
-  the same module at the same time.
-- **Refresh.** The editor gets its own refresh action (reusing the existing
-  rescan pipeline) so changes made by dragging a file out to Finder — which
-  the app can't observe happening — are picked up on demand, consistent with
-  the rest of the app's existing refresh-on-demand posture (there's no
-  filesystem watcher anywhere yet).
+  rejected with a clear message — transform only has well-defined behavior
+  for a folder of loose files, and a folder with subfolders is likely
+  already functioning as a Category with real lessons inside it.
+- **Renaming the Module itself** updates `ClassroomBrowserViewModel`'s own
+  `selectedModuleID` immediately, so editing doesn't lose its place
+  mid-rename.
+- **No visual difference when not editing.** This was the whole point of
+  the rework — verified by reading through both views and confirming every
+  new affordance is gated behind `viewModel.isEditingModule`, with the
+  non-editing branch matching the pre-editor code exactly.
+- **Dirty notes aren't lost by an unrelated edit.** Every editing action
+  routes through the existing `refresh()`, which already flushes
+  `saveSelectedNoteIfNeeded()` before rescanning — so replacing hero media
+  or adding an attachment mid-note-edit doesn't blow away unsaved notes
+  text.
 
 ## Plan
 
-See `roadmap.md` for the phase-by-phase breakdown that was followed.
+See `roadmap.md` — written for the original two-pane-screen design. Phases
+A and B (metadata migration, `ClassroomEditorService`) shipped as planned
+and are unaffected by the later rework. Phases C–G were superseded by the
+in-place-editing approach described above.
 
 ## What shipped
 
-- **Phase A** — `MetadataMigrationService` (pure prefix-rewrite over
-  `lessonState`/`lessonOrder`/`categoryOrder`/`moduleOrder`, cascading
-  correctly for module/category/lesson rename and move) plus
-  `MetadataStore.migratePath`; `FileNode` + `ModuleFileTreeScanner` (the raw
-  per-module file tree, with `structuralKind` — category/lesson/untracked —
-  computed at scan time); `ClassroomScanner.defaultMediaExtensions`
-  promoted to a public constant; scanner hidden/visibility checks factored
-  into a shared `FileSystemVisibility` helper.
-- **Phase B** — `ClassroomEditorService`: transform-to-lesson (with
-  ambiguous media/notes detection and a subfolder/already-a-lesson guard),
-  create category/lesson, rename, move (reparent), Trash, `importFile`
-  (always a move, auto-disambiguates name collisions), attachment add/
-  remove (remove → lesson-local `Removed/`, never deletes), hero-media
-  replace (demotes the old file to `Attachments/`).
-- **Phase C** — `ClassroomEditorViewModel`: thin orchestration over
-  Phase A/B, plus its own saved-order-aware `orderedDirectLessons`/
-  `orderedCategories` (reusing `OrderingService` so the editor matches
-  normal browsing's custom order instead of always showing alphabetical).
-  Caught and fixed a real bug during this phase: `MetadataStore.
-  updateOrdering` throws against a classroom with no metadata file yet,
-  which normal browsing always creates first but the editor shouldn't
-  silently depend on — it now guarantees metadata exists on init.
-- **Phases D–F** — the editor UI: entry point on the gallery card's
-  context menu; `ModuleEditorView`'s two-pane shell (raw tree +
-  structured outline) with module name/description editing in the header;
-  `EditorStructuredOutlineView` (drag reorder, drag reparent, **+**
-  create, inline rename, Trash); `EditorFileTreeView` (raw tree, drag
-  source, Transform to Lesson); `TransformDisambiguationSheet`; and
-  `EditorLessonDetailView`'s three drop zones (hero media replace, notes
-  link-insert with no file movement, attachments add/remove).
-- **Phase G** — `docs/phase-9-checklist.md`, README updates, launcher app
-  rebuilt.
+- `MetadataMigrationService` + `MetadataStore.migratePath` — path-prefix
+  rewrite for rename/move, cascading correctly for module/category/lesson.
+- `ClassroomEditorService` — transform-to-lesson (with ambiguous
+  media/notes detection and a subfolder/already-a-lesson guard), create
+  category/lesson, rename, move (reparent), Trash, `importFile` (always a
+  move, auto-disambiguates name collisions), attachment add/remove (remove
+  → lesson-local `Removed/`, never deletes), hero-media replace (demotes
+  the old file to `Attachments/`).
+- `ClassroomBrowserViewModel` grew editing methods (rename/create/move/
+  trash/transform for modules, categories, and lessons; hero/notes-link/
+  attachment operations scoped to the selected lesson) plus
+  `isEditingModule` and `pendingTransform` state — no separate view model.
+- `ClassroomSidebarView` and `ClassroomBrowserView`'s detail pane gained
+  inline editing affordances, gated behind `isEditingModule`, with zero
+  layout change when editing is off.
+- `SidebarModule` gained a `description` field so the sidebar header can
+  show/edit it (mirrors what `GalleryModule` already carried).
+- `TransformDisambiguationSheet` retargeted at
+  `ClassroomBrowserViewModel.PendingTransform`.
 
 ## Verification
 
 - `swift build` — clean.
-- `swift run ClassroomSmokeTests` — passed, including new coverage for
-  transform, create/rename/move with metadata migration, import/
-  disambiguation, the `Removed/` attachment lifecycle, and saved-order
-  reordering — all verified with real execution against a real filesystem,
-  not just compiled.
+- `swift run ClassroomSmokeTests` — passed, exercising the full editing
+  flow through `ClassroomBrowserViewModel`: edit-mode toggle, drag-reorder
+  of direct lessons and categories, create category, transform-to-lesson,
+  move (reparent) with metadata migration, rename with metadata migration,
+  module description update, module rename cascading metadata to nested
+  lessons, and Trash — all verified with real execution against a real
+  filesystem, not just compiled. Also caught and fixed a real test-fixture
+  mistake along the way (a loose untransformed folder reads as a Category
+  too, so it must appear in category-order assertions).
 - `swift test` — compiles; this sandbox has no `xctest` runner to actually
   execute the XCTest bundle (see the note in the GALLERY-LESSON-FOLDERS
   update) — run it for real on a machine with Xcode installed.
-- The editor UI itself (drag-and-drop feel, layout, sheet presentation)
-  was never visually exercised in this session — there's no way to drive a
-  macOS GUI from this environment. It builds and type-checks cleanly, and
-  every operation it calls into is independently verified, but run through
-  `docs/phase-9-checklist.md` by hand before treating the interactions
-  themselves as confirmed.
+- The UI itself (drag-and-drop feel, inline rename focus behavior, drop
+  zone hit-testing) was never visually exercised in this session — there's
+  no way to drive a macOS GUI from this environment. It builds and
+  type-checks cleanly, and every operation it calls into is independently
+  verified, but run through `docs/phase-9-checklist.md` by hand before
+  treating the interactions themselves as confirmed.

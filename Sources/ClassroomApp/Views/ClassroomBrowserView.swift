@@ -8,7 +8,9 @@ struct ClassroomBrowserView: View {
     @State private var selectedSidebarID: String?
     @State private var noteAutosaveTask: Task<Void, Never>?
     @State private var noteEditorHeight: CGFloat = 180
-    @State private var editingModuleID: String?
+    @State private var isTargetedHero = false
+    @State private var isTargetedNotes = false
+    @State private var isTargetedAttachments = false
 
     var body: some View {
         Group {
@@ -19,33 +21,13 @@ struct ClassroomBrowserView: View {
                     classroomName: classroom.name,
                     modules: viewModel.galleryModules,
                     onOpenModule: viewModel.openModule,
-                    onOpenEditor: { editingModuleID = $0 }
+                    onOpenEditor: { moduleID in
+                        viewModel.openModule(moduleID)
+                        viewModel.setEditingModule(true)
+                    }
                 )
             } else {
                 emptyState
-            }
-        }
-        .sheet(isPresented: Binding(
-            get: { editingModuleID != nil },
-            set: { isPresented in
-                if !isPresented {
-                    editingModuleID = nil
-                    viewModel.refresh()
-                }
-            }
-        )) {
-            if
-                let editingModuleID,
-                let rootURL = viewModel.classroom?.rootURL,
-                let module = viewModel.classroom?.modules.first(where: { $0.relativePath == editingModuleID })
-            {
-                ModuleEditorView(
-                    rootURL: rootURL,
-                    moduleRelativePath: module.relativePath,
-                    moduleName: module.name,
-                    moduleDescription: module.description,
-                    onClose: { self.editingModuleID = nil }
-                )
             }
         }
         .onChange(of: viewModel.selectedLessonPath) { _, newValue in
@@ -117,11 +99,13 @@ struct ClassroomBrowserView: View {
                     if selectedLesson.mediaURL != nil {
                         mediaPlayer
                         playbackProgress(for: selectedLesson)
+                    } else if viewModel.isEditingModule {
+                        mediaPlayer
                     }
 
                     notesEditor
 
-                    if !selectedLesson.attachmentURLs.isEmpty {
+                    if !selectedLesson.attachmentURLs.isEmpty || viewModel.isEditingModule {
                         attachmentsSection(selectedLesson.attachmentURLs)
                     }
                 } else {
@@ -163,6 +147,15 @@ struct ClassroomBrowserView: View {
                         saveCurrentPlaybackProgress()
                         playbackService.pause()
                     }
+            } else if viewModel.selectedLesson?.mediaURL == nil {
+                ContentUnavailableView(
+                    "No Media Yet",
+                    systemImage: "play.rectangle",
+                    description: Text(viewModel.isEditingModule ? "Drop a video or audio file here." : "This lesson has no media.")
+                )
+                .frame(minHeight: 360)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
             } else {
                 ContentUnavailableView(
                     "Media Unavailable",
@@ -172,6 +165,15 @@ struct ClassroomBrowserView: View {
                 .frame(minHeight: 360)
             }
         }
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(isTargetedHero ? Color.accentColor : Color.clear, lineWidth: 2)
+        )
+        .modifier(ConditionalURLDropModifier(isEnabled: viewModel.isEditingModule, isTargeted: $isTargetedHero) { urls in
+            guard let url = urls.first else { return false }
+            viewModel.replaceSelectedLessonHeroMedia(fileURL: url)
+            return true
+        })
     }
 
     private func playbackProgress(for lesson: Lesson) -> some View {
@@ -207,6 +209,21 @@ struct ClassroomBrowserView: View {
                 onTextChange: scheduleNoteAutosave
             )
             .frame(minHeight: noteEditorHeight, maxHeight: noteEditorHeight)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(isTargetedNotes ? Color.accentColor : Color.clear, lineWidth: 2)
+            )
+            .modifier(ConditionalURLDropModifier(isEnabled: viewModel.isEditingModule, isTargeted: $isTargetedNotes) { urls in
+                guard let url = urls.first else { return false }
+                viewModel.insertNotesLinkForSelectedLesson(fileURL: url)
+                return true
+            })
+
+            if viewModel.isEditingModule {
+                Text("Drop a file here to insert a link to it — the file stays where it is.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             if let noteErrorMessage = viewModel.noteErrorMessage {
                 Text(noteErrorMessage)
@@ -221,13 +238,51 @@ struct ClassroomBrowserView: View {
             Text("Attachments")
                 .font(.headline)
 
+            if attachmentURLs.isEmpty {
+                Text("No attachments yet.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             ForEach(attachmentURLs, id: \.self) { url in
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Label(url.lastPathComponent, systemImage: "paperclip")
+                HStack {
+                    Button {
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Label(url.lastPathComponent, systemImage: "paperclip")
+                    }
+                    .buttonStyle(.link)
+
+                    if viewModel.isEditingModule {
+                        Spacer()
+                        Button {
+                            viewModel.removeAttachmentFromSelectedLesson(url)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .help("Remove — moves to this lesson's Removed folder, doesn't delete")
+                    }
                 }
-                .buttonStyle(.link)
+                .draggable(url)
+            }
+
+            if viewModel.isEditingModule {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4]))
+                    .foregroundStyle(isTargetedAttachments ? Color.accentColor : Color.secondary)
+                    .frame(height: 44)
+                    .overlay(
+                        Text("Drop files here to attach")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    )
+                    .dropDestination(for: URL.self) { urls, _ in
+                        for url in urls {
+                            viewModel.addAttachmentToSelectedLesson(fileURL: url)
+                        }
+                        return !urls.isEmpty
+                    } isTargeted: { isTargetedAttachments = $0 }
             }
         }
     }
@@ -293,5 +348,23 @@ struct ClassroomBrowserView: View {
     private func formatTime(_ seconds: Double) -> String {
         let totalSeconds = max(0, Int(seconds.rounded()))
         return "\(totalSeconds / 60):\(String(format: "%02d", totalSeconds % 60))"
+    }
+}
+
+/// Only registers as a drop target when `isEnabled` — outside edit mode
+/// the view underneath behaves exactly as it always has.
+private struct ConditionalURLDropModifier: ViewModifier {
+    let isEnabled: Bool
+    @Binding var isTargeted: Bool
+    let action: ([URL]) -> Bool
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.dropDestination(for: URL.self) { urls, _ in
+                action(urls)
+            } isTargeted: { isTargeted = $0 }
+        } else {
+            content
+        }
     }
 }
