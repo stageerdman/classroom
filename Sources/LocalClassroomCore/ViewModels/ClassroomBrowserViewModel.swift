@@ -6,10 +6,12 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     @Published public private(set) var classroom: Classroom?
     @Published public private(set) var sidebar: ClassroomSidebar?
     @Published public private(set) var recentClassrooms: [RecentClassroom]
+    @Published public private(set) var selectedModuleID: String?
     @Published public private(set) var selectedLessonPath: String?
     @Published public private(set) var selectedLesson: Lesson?
     @Published public private(set) var classroomProgress = ProgressSummary(completedLessons: 0, totalLessons: 0)
     @Published public private(set) var moduleProgress: [ModuleProgressSummary] = []
+    @Published public private(set) var galleryModules: [GalleryModule] = []
     @Published public private(set) var noteText = ""
     @Published public private(set) var isNoteDirty = false
     @Published public private(set) var noteErrorMessage: String?
@@ -44,13 +46,38 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     }
 
     public func openRecent(_ recent: RecentClassroom) {
+        saveSelectedNoteIfNeeded()
         let resolvedURL = accessStore.resolvedURL(forPath: recent.path)
         openResolvedURL(resolvedURL, shouldAddToRecent: true)
     }
 
     public func removeRecent(_ recent: RecentClassroom) {
         recentStore.remove(path: recent.path)
-        recentClassrooms = recentStore.list()
+        refreshRecentClassrooms()
+    }
+
+    public var selectedModule: SidebarModule? {
+        guard let selectedModuleID else {
+            return nil
+        }
+
+        return sidebar?.modules.first { $0.id == selectedModuleID }
+    }
+
+    public func openModule(_ id: String) {
+        guard selectedModuleID != id else {
+            return
+        }
+
+        saveSelectedNoteIfNeeded()
+        selectedModuleID = id
+        clearSelectedLesson()
+    }
+
+    public func closeModule() {
+        saveSelectedNoteIfNeeded()
+        selectedModuleID = nil
+        clearSelectedLesson()
     }
 
     public func refresh() {
@@ -200,7 +227,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         guard
             isNoteDirty,
             let selectedLesson,
-            !noteText.isEmpty || FileManager.default.fileExists(atPath: selectedLesson.notesURL.path)
+            !noteText.isEmpty || FileManager.default.fileExists(atPath: notesService.noteURL(for: selectedLesson).path)
         else {
             return
         }
@@ -263,14 +290,11 @@ public final class ClassroomBrowserViewModel: ObservableObject {
             currentRootURL = nil
             classroom = nil
             sidebar = nil
-            selectedLessonPath = nil
-            selectedLesson = nil
-            noteText = ""
-            isNoteDirty = false
-            noteErrorMessage = nil
+            selectedModuleID = nil
+            clearSelectedLesson()
             updateProgressSummaries()
             errorMessage = "Classroom folder could not be opened: \(url.path)"
-            recentClassrooms = recentStore.list()
+            refreshRecentClassrooms()
             return
         }
 
@@ -283,12 +307,13 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         updateProgressSummaries()
         errorMessage = nil
 
+        if let selectedModuleID, !mergedClassroom.modules.contains(where: { $0.relativePath == selectedModuleID }) {
+            self.selectedModuleID = nil
+            clearSelectedLesson()
+        }
+
         if selectedLessonPath != nil && lesson(for: selectedLessonPath, in: mergedClassroom) == nil {
-            selectedLessonPath = nil
-            selectedLesson = nil
-            noteText = ""
-            isNoteDirty = false
-            noteErrorMessage = nil
+            clearSelectedLesson()
         } else if selectedLessonPath != nil {
             selectedLesson = lesson(for: selectedLessonPath, in: mergedClassroom)
             loadNotesForSelectedLesson()
@@ -296,7 +321,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
 
         if shouldAddToRecent {
             recentStore.add(url)
-            recentClassrooms = recentStore.list()
+            refreshRecentClassrooms()
         }
     }
 
@@ -320,10 +345,10 @@ public final class ClassroomBrowserViewModel: ObservableObject {
             return
         }
 
-        guard FileManager.default.fileExists(atPath: selected.videoURL.path) else {
+        guard FileManager.default.fileExists(atPath: selected.folderURL.path) else {
             selectedLessonPath = nil
             selectedLesson = nil
-            errorMessage = "Video file is missing: \(selected.videoURL.path)"
+            errorMessage = "Lesson folder is missing: \(selected.folderURL.path)"
             return
         }
 
@@ -396,15 +421,45 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
     }
 
+    private func refreshRecentClassrooms() {
+        recentClassrooms = recentStore.list()
+        NotificationCenter.default.post(name: .recentClassroomsDidChange, object: nil)
+    }
+
+    private func clearSelectedLesson() {
+        selectedLessonPath = nil
+        selectedLesson = nil
+        noteText = ""
+        isNoteDirty = false
+        noteErrorMessage = nil
+    }
+
     private func updateProgressSummaries() {
         guard let classroom else {
             classroomProgress = ProgressSummary(completedLessons: 0, totalLessons: 0)
             moduleProgress = []
+            galleryModules = []
             return
         }
 
         classroomProgress = ProgressService.classroomProgress(for: classroom)
         moduleProgress = ProgressService.moduleProgress(for: classroom)
+        galleryModules = Self.galleryModules(from: classroom)
+    }
+
+    private static func galleryModules(from classroom: Classroom) -> [GalleryModule] {
+        let progressByModule = Dictionary(
+            uniqueKeysWithValues: ProgressService.moduleProgress(for: classroom).map { ($0.id, $0.progress) }
+        )
+
+        return classroom.modules.map { module in
+            GalleryModule(
+                id: module.relativePath,
+                name: module.name,
+                description: module.description,
+                progress: progressByModule[module.relativePath] ?? ProgressSummary(completedLessons: 0, totalLessons: 0)
+            )
+        }
     }
 
     private func selectAdjacentLesson(offset: Int) {

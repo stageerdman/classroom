@@ -1,133 +1,86 @@
 import LocalClassroomCore
 import SwiftUI
 
+/// Sidebar scoped to a single Module — shown after the user opens a module
+/// from the classroom gallery. Reachable only from inside a module; the
+/// classroom-wide view is `ClassroomGalleryView`.
 struct ClassroomSidebarView: View {
     @ObservedObject var viewModel: ClassroomBrowserViewModel
+    let module: SidebarModule
     @Binding var selectedSidebarID: String?
     let onSelectLesson: (SidebarLesson) -> Void
+    let onBack: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
+            backButton
+
             List(selection: $selectedSidebarID) {
-                if let sidebar = viewModel.sidebar {
-                    Section(sidebar.title) {
-                        progressHeader
+                Section(module.name) {
+                    moduleProgressHeader
 
-                        ForEach(sidebar.modules) { module in
-                            DisclosureGroup {
-                                ForEach(module.directLessons) { lesson in
-                                    lessonRow(lesson)
-                                        .contextMenu {
-                                            Button("Move Up") {
-                                                viewModel.moveDirectLesson(moduleID: module.id, lessonID: lesson.id, offset: -1)
-                                            }
-                                            Button("Move Down") {
-                                                viewModel.moveDirectLesson(moduleID: module.id, lessonID: lesson.id, offset: 1)
-                                            }
-                                            Divider()
-                                            Button("Reset Direct Lesson Order") {
-                                                viewModel.resetDirectLessonOrder(moduleID: module.id)
-                                            }
-                                        }
-                                }
-                                .onMove { source, destination in
-                                    viewModel.moveDirectLessons(moduleID: module.id, from: source, to: destination)
-                                }
-
-                                ForEach(module.categories) { category in
-                                    DisclosureGroup(category.name) {
-                                        ForEach(category.lessons) { lesson in
-                                            lessonRow(lesson)
-                                                .contextMenu {
-                                                    Button("Move Up") {
-                                                        viewModel.moveCategoryLesson(categoryID: category.id, lessonID: lesson.id, offset: -1)
-                                                    }
-                                                    Button("Move Down") {
-                                                        viewModel.moveCategoryLesson(categoryID: category.id, lessonID: lesson.id, offset: 1)
-                                                    }
-                                                    Divider()
-                                                    Button("Reset Lesson Order") {
-                                                        viewModel.resetCategoryLessonOrder(categoryID: category.id)
-                                                    }
-                                                }
-                                        }
-                                        .onMove { source, destination in
-                                            viewModel.moveCategoryLessons(categoryID: category.id, from: source, to: destination)
-                                        }
-                                    }
-                                    .contextMenu {
-                                        Button("Move Up") {
-                                            viewModel.moveCategory(moduleID: module.id, categoryID: category.id, offset: -1)
-                                        }
-                                        Button("Move Down") {
-                                            viewModel.moveCategory(moduleID: module.id, categoryID: category.id, offset: 1)
-                                        }
-                                        Divider()
-                                        Button("Reset Category Order") {
-                                            viewModel.resetCategoryOrder(moduleID: module.id)
-                                        }
-                                    }
-                                }
-                                .onMove { source, destination in
-                                    viewModel.moveCategories(moduleID: module.id, from: source, to: destination)
-                                }
-                            } label: {
-                                Label(module.name, systemImage: "rectangle.stack")
-                            }
+                    ForEach(module.directLessons) { lesson in
+                        lessonRow(lesson)
                             .contextMenu {
                                 Button("Move Up") {
-                                    viewModel.moveModule(id: module.id, offset: -1)
+                                    viewModel.moveDirectLesson(moduleID: module.id, lessonID: lesson.id, offset: -1)
                                 }
                                 Button("Move Down") {
-                                    viewModel.moveModule(id: module.id, offset: 1)
+                                    viewModel.moveDirectLesson(moduleID: module.id, lessonID: lesson.id, offset: 1)
                                 }
                                 Divider()
-                                Button("Reset Module Order") {
-                                    viewModel.resetModuleOrder()
+                                Button("Reset Direct Lesson Order") {
+                                    viewModel.resetDirectLessonOrder(moduleID: module.id)
                                 }
                             }
-                        }
-                        .onMove { source, destination in
-                            viewModel.moveModules(from: source, to: destination)
-                        }
+                    }
+                    .onMove { source, destination in
+                        viewModel.moveDirectLessons(moduleID: module.id, from: source, to: destination)
                     }
 
-                    if sidebar.warningCount > 0 {
-                        Section("Warnings") {
-                            Label("\(sidebar.warningCount) structural warning\(sidebar.warningCount == 1 ? "" : "s")", systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(.orange)
+                    ForEach(module.categories) { category in
+                        DisclosureGroup(category.name) {
+                            ForEach(category.lessons) { lesson in
+                                lessonRow(lesson)
+                                    .contextMenu {
+                                        Button("Move Up") {
+                                            viewModel.moveCategoryLesson(categoryID: category.id, lessonID: lesson.id, offset: -1)
+                                        }
+                                        Button("Move Down") {
+                                            viewModel.moveCategoryLesson(categoryID: category.id, lessonID: lesson.id, offset: 1)
+                                        }
+                                        Divider()
+                                        Button("Reset Lesson Order") {
+                                            viewModel.resetCategoryLessonOrder(categoryID: category.id)
+                                        }
+                                    }
+                            }
+                            .onMove { source, destination in
+                                viewModel.moveCategoryLessons(categoryID: category.id, from: source, to: destination)
+                            }
+                        }
+                        .contextMenu {
+                            Button("Move Up") {
+                                viewModel.moveCategory(moduleID: module.id, categoryID: category.id, offset: -1)
+                            }
+                            Button("Move Down") {
+                                viewModel.moveCategory(moduleID: module.id, categoryID: category.id, offset: 1)
+                            }
+                            Divider()
+                            Button("Reset Category Order") {
+                                viewModel.resetCategoryOrder(moduleID: module.id)
+                            }
                         }
                     }
-                } else {
-                    Section("Classroom") {
-                        Text("Open a folder to begin.")
-                            .foregroundStyle(.secondary)
+                    .onMove { source, destination in
+                        viewModel.moveCategories(moduleID: module.id, from: source, to: destination)
                     }
                 }
 
-                if !viewModel.recentClassrooms.isEmpty {
-                    Section("Recent") {
-                        ForEach(viewModel.recentClassrooms) { recent in
-                            HStack {
-                                Button {
-                                    viewModel.openRecent(recent)
-                                } label: {
-                                    Label(recent.name, systemImage: "clock")
-                                        .lineLimit(1)
-                                }
-                                .buttonStyle(.plain)
-
-                                Spacer()
-
-                                Button {
-                                    viewModel.removeRecent(recent)
-                                } label: {
-                                    Image(systemName: "xmark")
-                                }
-                                .buttonStyle(.borderless)
-                                .help("Remove from recent classrooms")
-                            }
-                        }
+                if let warningCount = viewModel.sidebar?.warningCount, warningCount > 0 {
+                    Section("Warnings") {
+                        Label("\(warningCount) structural warning\(warningCount == 1 ? "" : "s")", systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
                     }
                 }
             }
@@ -143,8 +96,23 @@ struct ClassroomSidebarView: View {
         }
     }
 
-    private var progressHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private var backButton: some View {
+        HStack {
+            Button(action: onBack) {
+                Label("Modules", systemImage: "chevron.left")
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+        }
+        .padding(10)
+    }
+
+    private var moduleProgressHeader: some View {
+        let progress = viewModel.moduleProgress.first { $0.id == module.id }?.progress
+            ?? ProgressSummary(completedLessons: 0, totalLessons: 0)
+
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Progress")
                     .font(.subheadline)
@@ -152,15 +120,15 @@ struct ClassroomSidebarView: View {
 
                 Spacer()
 
-                Text("\(viewModel.classroomProgress.completedLessons)/\(viewModel.classroomProgress.totalLessons) complete")
+                Text("\(progress.completedLessons)/\(progress.totalLessons) complete")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            ProgressView(value: viewModel.classroomProgress.percentage) {
+            ProgressView(value: progress.percentage) {
                 EmptyView()
             } currentValueLabel: {
-                Text(viewModel.classroomProgress.percentageText)
+                Text(progress.percentageText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -26,15 +26,18 @@ public struct DeveloperScannerViewModel {
 
         for module in classroom.modules {
             lines.append("Module: \(module.name)")
+            if let description = module.description {
+                lines.append("  Description: \(description)")
+            }
 
             for lesson in module.directLessons {
-                lines.append("  Lesson: \(lesson.title).\(lesson.fileExtension)")
+                lines.append("  Lesson: \(lesson.title)\(lessonSuffix(lesson))")
             }
 
             for category in module.categories {
                 lines.append("  Category: \(category.name)")
                 for lesson in category.lessons {
-                    lines.append("    Lesson: \(lesson.title).\(lesson.fileExtension)")
+                    lines.append("    Lesson: \(lesson.title)\(lessonSuffix(lesson))")
                 }
             }
         }
@@ -48,5 +51,24 @@ public struct DeveloperScannerViewModel {
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    private static func lessonSuffix(_ lesson: Lesson) -> String {
+        var parts: [String] = []
+        if lesson.mediaURL != nil {
+            parts.append("media")
+        }
+        if lesson.notesURL != nil {
+            parts.append("notes")
+        }
+        if !lesson.attachmentURLs.isEmpty {
+            parts.append("\(lesson.attachmentURLs.count) attachment(s)")
+        }
+
+        guard !parts.isEmpty else {
+            return ""
+        }
+
+        return " (\(parts.joined(separator: ", ")))"
     }
 }

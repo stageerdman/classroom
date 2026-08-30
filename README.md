@@ -1,26 +1,46 @@
 # Local Classroom
 
-A local-first macOS app that turns any folder of video files into a
-browsable classroom — no upload, no duplication, no server. The folder
-structure is the source of truth: folder names become classrooms, modules,
-and categories, and video filenames become lesson names.
+A local-first macOS app that turns any folder into a browsable classroom —
+no upload, no duplication, no server. The folder structure is the source of
+truth: folder names become classrooms, modules, categories, and lessons.
 
-See `local_classroom_codex_spec.md` for the full product and engineering
-spec.
+Opening a classroom shows a gallery of module cards (name, description,
+progress); opening a module reveals the sidebar of categories and lessons.
+See `local_classroom_codex_spec.md` for the original product and
+engineering spec, and
+`updates/2026-08-30 GALLERY-LESSON-FOLDERS - OPEN/update.md` for the
+gallery/lesson-folder update layered on top of it.
 
 ## Structure
 
 ```text
-Classroom Root/          Depth 1: Classroom
-├── Module A/             Depth 2: Module
-│   ├── Lesson 1.mp4       Depth 3: Direct lesson
-│   ├── Category A/        Depth 3: Category
-│   │   └── Lesson 2.mp4    Depth 4: Lesson
-│   └── Lesson 4.m4v
+Classroom Root/                  Depth 1: Classroom
+├── Module A/                     Depth 2: Module
+│   ├── description.md            Optional — module card description
+│   ├── Lesson 1/                  Depth 3: Direct lesson folder
+│   │   ├── .lesson                 Hidden marker — this folder is a lesson
+│   │   ├── Lesson 1.mp4            At most one playable media file
+│   │   ├── Lesson 1.md             At most one Markdown notes file
+│   │   └── Attachments/            Optional — files attached to the lesson
+│   │       └── Handout.pdf
+│   └── Category A/                Depth 3: Category (no marker file)
+│       └── Lesson 2/               Depth 4: Lesson folder
+│           ├── .lesson
+│           └── Lesson 2.mov
 └── Module B/
 ```
 
-Supported video formats: `.mp4`, `.mov`, `.m4v`.
+A folder is a **Lesson** if it directly contains a hidden `.lesson` marker
+file — that's what lets a Lesson folder and a Category folder coexist at
+the same depth. A Lesson folder holds at most one playable media file
+(`.mp4`, `.mov`, `.m4v`, `.mp3`, `.m4a`, `.wav`), at most one `.md` notes
+file, and an optional `Attachments/` folder; attachments only show up in
+the UI when that folder is present and non-empty.
+
+This is a breaking format change from the original flat
+`Lesson Name.mp4` + `Lesson Name.md` layout — classrooms in the old format
+need to be manually restructured into lesson folders; there is no
+automatic migration.
 
 ## Building
 

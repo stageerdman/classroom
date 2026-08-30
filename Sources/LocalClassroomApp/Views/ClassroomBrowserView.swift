@@ -10,17 +10,18 @@ struct ClassroomBrowserView: View {
     @State private var noteEditorHeight: CGFloat = 180
 
     var body: some View {
-        HStack(spacing: 0) {
-            ClassroomSidebarView(
-                viewModel: viewModel,
-                selectedSidebarID: $selectedSidebarID,
-                onSelectLesson: selectLesson
-            )
-                .frame(width: 310)
-
-            Divider()
-
-            detail
+        Group {
+            if let module = viewModel.selectedModule {
+                moduleDetailLayout(module: module)
+            } else if let classroom = viewModel.classroom {
+                ClassroomGalleryView(
+                    classroomName: classroom.name,
+                    modules: viewModel.galleryModules,
+                    onOpenModule: viewModel.openModule
+                )
+            } else {
+                emptyState
+            }
         }
         .onChange(of: viewModel.selectedLessonPath) { _, newValue in
             selectedSidebarID = newValue
@@ -32,6 +33,9 @@ struct ClassroomBrowserView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openClassroomRequested)) { _ in
             openFolder()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openRecentClassroomRequested)) { notification in
+            openRecent(notification)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .refreshClassroomRequested)) { _ in
             viewModel.refresh()
         }
@@ -42,74 +46,109 @@ struct ClassroomBrowserView: View {
         .frame(minWidth: 900, minHeight: 560)
     }
 
+    private func moduleDetailLayout(module: SidebarModule) -> some View {
+        HStack(spacing: 0) {
+            ClassroomSidebarView(
+                viewModel: viewModel,
+                module: module,
+                selectedSidebarID: $selectedSidebarID,
+                onSelectLesson: selectLesson,
+                onBack: { viewModel.closeModule() }
+            )
+            .frame(width: 310)
+
+            Divider()
+
+            detail
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            ContentUnavailableView(
+                "No Classroom Open",
+                systemImage: "folder",
+                description: Text("Choose a local folder to scan its module and lesson structure.")
+            )
+
+            Button("Open Classroom...", action: openFolder)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private var detail: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let selectedLesson = viewModel.selectedLesson {
-                    HStack(alignment: .firstTextBaseline, spacing: 16) {
-                        Text(selectedLesson.title)
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                            .lineLimit(2)
+                    lessonHeader(selectedLesson)
 
-                        Spacer()
-
-                        Toggle("Complete", isOn: Binding(
-                            get: { viewModel.selectedLesson?.state.completed ?? false },
-                            set: { viewModel.setSelectedLessonCompleted($0) }
-                        ))
-                        .toggleStyle(.checkbox)
-                    }
-
-                    if let player = playbackService.player {
-                        PlayerView(player: player)
-                            .frame(height: 360)
-                            .background(Color.black)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                            .onDisappear {
-                                saveCurrentPlaybackProgress()
-                                playbackService.pause()
-                            }
-                    } else {
-                        ContentUnavailableView(
-                            "Video Unavailable",
-                            systemImage: "exclamationmark.triangle",
-                            description: Text(playbackService.errorMessage ?? "The selected video could not be loaded.")
-                        )
-                        .frame(minHeight: 360)
-                    }
-
-                    if let selectedLesson = viewModel.selectedLesson {
-                        ProgressView(
-                            value: selectedLesson.state.playbackPositionSeconds,
-                            total: max(selectedLesson.state.playbackPositionSeconds, playbackService.durationSeconds ?? selectedLesson.state.playbackPositionSeconds, 1)
-                        ) {
-                            Text("Saved position: \(formatTime(selectedLesson.state.playbackPositionSeconds))")
-                        }
+                    if selectedLesson.mediaURL != nil {
+                        mediaPlayer
+                        playbackProgress(for: selectedLesson)
                     }
 
                     notesEditor
-                } else if let classroom = viewModel.classroom {
-                    Text(classroom.name)
-                        .font(.largeTitle)
-                        .fontWeight(.semibold)
-                    Text("\(classroom.modules.count) module\(classroom.modules.count == 1 ? "" : "s")")
-                        .foregroundStyle(.secondary)
+
+                    if !selectedLesson.attachmentURLs.isEmpty {
+                        attachmentsSection(selectedLesson.attachmentURLs)
+                    }
+                } else {
                     Text("Select a lesson from the sidebar.")
                         .foregroundStyle(.secondary)
-                } else {
-                    ContentUnavailableView(
-                        "No Classroom Open",
-                        systemImage: "folder",
-                        description: Text("Choose a local folder to scan its module and lesson structure.")
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 420)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(32)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func lessonHeader(_ lesson: Lesson) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            Text(lesson.title)
+                .font(.title2)
+                .fontWeight(.semibold)
+                .lineLimit(2)
+
+            Spacer()
+
+            Toggle("Complete", isOn: Binding(
+                get: { viewModel.selectedLesson?.state.completed ?? false },
+                set: { viewModel.setSelectedLessonCompleted($0) }
+            ))
+            .toggleStyle(.checkbox)
+        }
+    }
+
+    private var mediaPlayer: some View {
+        Group {
+            if let player = playbackService.player {
+                PlayerView(player: player)
+                    .frame(height: 360)
+                    .background(Color.black)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .onDisappear {
+                        saveCurrentPlaybackProgress()
+                        playbackService.pause()
+                    }
+            } else {
+                ContentUnavailableView(
+                    "Media Unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(playbackService.errorMessage ?? "The selected media could not be loaded.")
+                )
+                .frame(minHeight: 360)
+            }
+        }
+    }
+
+    private func playbackProgress(for lesson: Lesson) -> some View {
+        ProgressView(
+            value: lesson.state.playbackPositionSeconds,
+            total: max(lesson.state.playbackPositionSeconds, playbackService.durationSeconds ?? lesson.state.playbackPositionSeconds, 1)
+        ) {
+            Text("Saved position: \(formatTime(lesson.state.playbackPositionSeconds))")
+        }
     }
 
     private var notesEditor: some View {
@@ -145,6 +184,22 @@ struct ClassroomBrowserView: View {
         }
     }
 
+    private func attachmentsSection(_ attachmentURLs: [URL]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Attachments")
+                .font(.headline)
+
+            ForEach(attachmentURLs, id: \.self) { url in
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Label(url.lastPathComponent, systemImage: "paperclip")
+                }
+                .buttonStyle(.link)
+            }
+        }
+    }
+
     private func openFolder() {
         viewModel.saveSelectedNoteIfNeeded()
 
@@ -160,6 +215,14 @@ struct ClassroomBrowserView: View {
         }
     }
 
+    private func openRecent(_ notification: Notification) {
+        guard let path = notification.userInfo?["path"] as? String else {
+            return
+        }
+
+        viewModel.openRecent(RecentClassroom(path: path))
+    }
+
     private func selectLesson(_ lesson: SidebarLesson) {
         saveCurrentPlaybackProgress()
         selectedSidebarID = lesson.id
@@ -167,12 +230,12 @@ struct ClassroomBrowserView: View {
     }
 
     private func loadSelectedLesson() {
-        guard let selectedLesson = viewModel.selectedLesson else {
+        guard let selectedLesson = viewModel.selectedLesson, let mediaURL = selectedLesson.mediaURL else {
             playbackService.clear()
             return
         }
 
-        playbackService.load(url: selectedLesson.videoURL)
+        playbackService.load(url: mediaURL)
         playbackService.resume(to: selectedLesson.state.playbackPositionSeconds)
     }
 

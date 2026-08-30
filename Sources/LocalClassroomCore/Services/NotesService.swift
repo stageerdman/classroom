@@ -1,18 +1,22 @@
 import Foundation
 
 public struct NotesService {
+    /// Filename used when a lesson has no `.md` file yet and the user
+    /// starts writing notes for the first time.
+    public static let defaultNotesFileName = "Notes.md"
+
     private let fileManager: FileManager
 
     public init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
     }
 
-    public func noteURL(for videoURL: URL) -> URL {
-        videoURL.deletingPathExtension().appendingPathExtension("md")
+    public func noteURL(for lesson: Lesson) -> URL {
+        lesson.notesURL ?? lesson.folderURL.appendingPathComponent(Self.defaultNotesFileName)
     }
 
     public func loadNotes(for lesson: Lesson) throws -> String {
-        let url = lesson.notesURL
+        let url = noteURL(for: lesson)
 
         guard fileManager.fileExists(atPath: url.path) else {
             return ""
@@ -27,7 +31,7 @@ public struct NotesService {
     }
 
     public func saveNotes(_ text: String, for lesson: Lesson) throws {
-        try saveNotes(text, to: lesson.notesURL)
+        try saveNotes(text, to: noteURL(for: lesson))
     }
 
     public func saveNotes(_ text: String, to url: URL) throws {

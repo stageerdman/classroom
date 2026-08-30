@@ -1,15 +1,25 @@
 import Foundation
 
+/// Scans a classroom root folder into an in-memory `Classroom` tree.
+///
+/// A folder is a Lesson if it directly contains the hidden
+/// `lessonMarkerFileName` file. This lets a Lesson folder and a Category
+/// folder coexist at the same depth without inspecting file contents to
+/// tell them apart.
 public struct ClassroomScanner {
+    public static let lessonMarkerFileName = ".lesson"
+    public static let attachmentsFolderName = "attachments"
+    public static let moduleDescriptionFileName = "description.md"
+
     private let fileManager: FileManager
-    private let supportedVideoExtensions: Set<String>
+    private let supportedMediaExtensions: Set<String>
 
     public init(
         fileManager: FileManager = .default,
-        supportedVideoExtensions: Set<String> = ["mp4", "mov", "m4v"]
+        supportedMediaExtensions: Set<String> = ["mp4", "mov", "m4v", "mp3", "m4a", "wav"]
     ) {
         self.fileManager = fileManager
-        self.supportedVideoExtensions = supportedVideoExtensions
+        self.supportedMediaExtensions = supportedMediaExtensions
     }
 
     public func scan(rootURL: URL) -> Classroom {
@@ -37,58 +47,125 @@ public struct ClassroomScanner {
     }
 
     private func scanModule(_ moduleURL: URL, rootURL: URL, warnings: inout [ClassroomWarning]) -> ClassroomModule {
-        let directLessons = scanLessons(in: moduleURL, rootURL: rootURL, warnings: &warnings)
-        let categoryURLs = visibleDirectoryChildren(of: moduleURL, rootURL: rootURL, warnings: &warnings)
-        let categories = NaturalSort.sorted(categoryURLs.map { categoryURL in
-            scanCategory(categoryURL, rootURL: rootURL, warnings: &warnings)
-        }, by: \.name)
+        let children = visibleChildren(of: moduleURL, rootURL: rootURL, warnings: &warnings)
+        let fileChildren = children.filter { resourceValue(for: $0, keyPath: \.isRegularFile) == true }
+        let directoryChildren = children.filter { resourceValue(for: $0, keyPath: \.isDirectory) == true }
+
+        var directLessons: [Lesson] = []
+        var categories: [LessonCategory] = []
+
+        for childDirectory in directoryChildren {
+            if isLessonFolder(childDirectory) {
+                directLessons.append(scanLesson(childDirectory, rootURL: rootURL, warnings: &warnings))
+            } else {
+                categories.append(scanCategory(childDirectory, rootURL: rootURL, warnings: &warnings))
+            }
+        }
 
         return ClassroomModule(
             relativePath: relativePath(for: moduleURL, rootURL: rootURL),
             name: moduleURL.lastPathComponent,
-            directLessons: directLessons,
-            categories: categories
+            description: moduleDescription(fileChildren: fileChildren),
+            directLessons: NaturalSort.sorted(directLessons, by: \.title),
+            categories: NaturalSort.sorted(categories, by: \.name)
         )
     }
 
     private func scanCategory(_ categoryURL: URL, rootURL: URL, warnings: inout [ClassroomWarning]) -> LessonCategory {
-        let nestedFolders = visibleDirectoryChildren(of: categoryURL, rootURL: rootURL, warnings: &warnings)
-        for nestedFolder in nestedFolders {
-            warnings.append(
-                ClassroomWarning(
-                    kind: .unsupportedDepth,
-                    relativePath: relativePath(for: nestedFolder, rootURL: rootURL),
-                    message: "Folders deeper than category level are not supported."
+        let directoryChildren = visibleDirectoryChildren(of: categoryURL, rootURL: rootURL, warnings: &warnings)
+        var lessons: [Lesson] = []
+
+        for childDirectory in directoryChildren {
+            if isLessonFolder(childDirectory) {
+                lessons.append(scanLesson(childDirectory, rootURL: rootURL, warnings: &warnings))
+            } else {
+                warnings.append(
+                    ClassroomWarning(
+                        kind: .unsupportedDepth,
+                        relativePath: relativePath(for: childDirectory, rootURL: rootURL),
+                        message: "Folders deeper than category level are only supported when marked as a lesson."
+                    )
                 )
-            )
+            }
         }
 
         return LessonCategory(
             relativePath: relativePath(for: categoryURL, rootURL: rootURL),
             name: categoryURL.lastPathComponent,
-            lessons: scanLessons(in: categoryURL, rootURL: rootURL, warnings: &warnings)
+            lessons: NaturalSort.sorted(lessons, by: \.title)
         )
     }
 
-    private func scanLessons(in directoryURL: URL, rootURL: URL, warnings: inout [ClassroomWarning]) -> [Lesson] {
-        let fileURLs = visibleFileChildren(of: directoryURL, rootURL: rootURL, warnings: &warnings)
-        let videoURLs = fileURLs.filter { supportedVideoExtensions.contains($0.pathExtension.lowercased()) }
-        appendDuplicateBasenameWarnings(for: videoURLs, rootURL: rootURL, warnings: &warnings)
+    private func scanLesson(_ lessonURL: URL, rootURL: URL, warnings: inout [ClassroomWarning]) -> Lesson {
+        let children = visibleChildren(of: lessonURL, rootURL: rootURL, warnings: &warnings)
+        let fileChildren = children.filter { resourceValue(for: $0, keyPath: \.isRegularFile) == true }
+        let directoryChildren = children.filter { resourceValue(for: $0, keyPath: \.isDirectory) == true }
+        let lessonRelativePath = relativePath(for: lessonURL, rootURL: rootURL)
 
-        let lessons = videoURLs.map { videoURL in
-            let title = videoURL.deletingPathExtension().lastPathComponent
-            let notesURL = videoURL.deletingPathExtension().appendingPathExtension("md")
-
-            return Lesson(
-                relativePath: relativePath(for: videoURL, rootURL: rootURL),
-                videoURL: videoURL,
-                notesURL: notesURL,
-                title: title,
-                fileExtension: videoURL.pathExtension
+        let mediaCandidates = sortedByFileName(
+            fileChildren.filter { supportedMediaExtensions.contains($0.pathExtension.lowercased()) }
+        )
+        if mediaCandidates.count > 1 {
+            warnings.append(
+                ClassroomWarning(
+                    kind: .ambiguousLessonMedia,
+                    relativePath: lessonRelativePath,
+                    message: "Multiple playable files found: \(mediaCandidates.map(\.lastPathComponent).joined(separator: ", ")). Using \(mediaCandidates[0].lastPathComponent)."
+                )
             )
         }
 
-        return NaturalSort.sorted(lessons, by: \.title)
+        let notesCandidates = sortedByFileName(
+            fileChildren.filter { $0.pathExtension.lowercased() == "md" }
+        )
+        if notesCandidates.count > 1 {
+            warnings.append(
+                ClassroomWarning(
+                    kind: .ambiguousLessonNotes,
+                    relativePath: lessonRelativePath,
+                    message: "Multiple notes files found: \(notesCandidates.map(\.lastPathComponent).joined(separator: ", ")). Using \(notesCandidates[0].lastPathComponent)."
+                )
+            )
+        }
+
+        let attachmentsDirectory = directoryChildren.first {
+            $0.lastPathComponent.lowercased() == Self.attachmentsFolderName
+        }
+        let attachmentURLs = attachmentsDirectory.map { attachmentsURL in
+            sortedByFileName(
+                visibleChildren(of: attachmentsURL, rootURL: rootURL, warnings: &warnings)
+                    .filter { resourceValue(for: $0, keyPath: \.isRegularFile) == true }
+            )
+        } ?? []
+
+        return Lesson(
+            relativePath: lessonRelativePath,
+            folderURL: lessonURL,
+            mediaURL: mediaCandidates.first,
+            notesURL: notesCandidates.first,
+            attachmentURLs: attachmentURLs,
+            title: lessonURL.lastPathComponent
+        )
+    }
+
+    private func isLessonFolder(_ url: URL) -> Bool {
+        fileManager.fileExists(atPath: url.appendingPathComponent(Self.lessonMarkerFileName).path)
+    }
+
+    private func moduleDescription(fileChildren: [URL]) -> String? {
+        guard
+            let descriptionURL = fileChildren.first(where: { $0.lastPathComponent.lowercased() == Self.moduleDescriptionFileName }),
+            let text = try? String(contentsOf: descriptionURL, encoding: .utf8)
+        else {
+            return nil
+        }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func sortedByFileName(_ urls: [URL]) -> [URL] {
+        urls.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 
     private func visibleDirectoryChildren(
@@ -98,16 +175,6 @@ public struct ClassroomScanner {
     ) -> [URL] {
         visibleChildren(of: directoryURL, rootURL: rootURL, warnings: &warnings).filter { childURL in
             resourceValue(for: childURL, keyPath: \.isDirectory) == true
-        }
-    }
-
-    private func visibleFileChildren(
-        of directoryURL: URL,
-        rootURL: URL,
-        warnings: inout [ClassroomWarning]
-    ) -> [URL] {
-        visibleChildren(of: directoryURL, rootURL: rootURL, warnings: &warnings).filter { childURL in
-            resourceValue(for: childURL, keyPath: \.isRegularFile) == true
         }
     }
 
@@ -151,27 +218,6 @@ public struct ClassroomScanner {
                 )
             )
             return []
-        }
-    }
-
-    private func appendDuplicateBasenameWarnings(
-        for videoURLs: [URL],
-        rootURL: URL,
-        warnings: inout [ClassroomWarning]
-    ) {
-        let grouped = Dictionary(grouping: videoURLs) { videoURL in
-            videoURL.deletingPathExtension().lastPathComponent.lowercased()
-        }
-
-        for duplicateURLs in grouped.values where duplicateURLs.count > 1 {
-            let names = NaturalSort.sorted(duplicateURLs.map(\.lastPathComponent)).joined(separator: ", ")
-            warnings.append(
-                ClassroomWarning(
-                    kind: .duplicateVideoBasename,
-                    relativePath: relativePath(for: duplicateURLs[0].deletingLastPathComponent(), rootURL: rootURL),
-                    message: "Duplicate video basenames found: \(names)."
-                )
-            )
         }
     }
 

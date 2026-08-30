@@ -17,12 +17,20 @@ public struct Classroom: Equatable {
 public struct ClassroomModule: Equatable {
     public let relativePath: String
     public var name: String
+    public var description: String?
     public var directLessons: [Lesson]
     public var categories: [LessonCategory]
 
-    public init(relativePath: String, name: String, directLessons: [Lesson], categories: [LessonCategory]) {
+    public init(
+        relativePath: String,
+        name: String,
+        description: String? = nil,
+        directLessons: [Lesson],
+        categories: [LessonCategory]
+    ) {
         self.relativePath = relativePath
         self.name = name
+        self.description = description
         self.directLessons = directLessons
         self.categories = categories
     }
@@ -40,27 +48,34 @@ public struct LessonCategory: Equatable {
     }
 }
 
+/// A Lesson is a folder marked with a hidden `.lesson` file (see
+/// `ClassroomScanner.lessonMarkerFileName`). The folder may contain at most
+/// one playable media file, at most one Markdown notes file, and an
+/// optional `Attachments` folder.
 public struct Lesson: Equatable {
     public let relativePath: String
-    public let videoURL: URL
-    public let notesURL: URL
+    public let folderURL: URL
+    public let mediaURL: URL?
+    public let notesURL: URL?
+    public let attachmentURLs: [URL]
     public let title: String
-    public let fileExtension: String
     public var state: LessonState
 
     public init(
         relativePath: String,
-        videoURL: URL,
-        notesURL: URL,
+        folderURL: URL,
+        mediaURL: URL?,
+        notesURL: URL?,
+        attachmentURLs: [URL] = [],
         title: String,
-        fileExtension: String,
         state: LessonState = LessonState()
     ) {
         self.relativePath = relativePath
-        self.videoURL = videoURL
+        self.folderURL = folderURL
+        self.mediaURL = mediaURL
         self.notesURL = notesURL
+        self.attachmentURLs = attachmentURLs
         self.title = title
-        self.fileExtension = fileExtension
         self.state = state
     }
 }
@@ -97,8 +112,9 @@ public struct ClassroomWarning: Equatable, CustomStringConvertible {
         case rootMissing
         case unreadableDirectory
         case unsupportedDepth
-        case duplicateVideoBasename
         case symbolicLink
+        case ambiguousLessonMedia
+        case ambiguousLessonNotes
         case malformedMetadata
         case unsupportedMetadataSchema
         case metadataWriteFailed

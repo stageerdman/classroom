@@ -18,34 +18,82 @@ func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
 expect(AppInfo.displayName == "Local Classroom", "Unexpected app display name")
 
 let fileManager = FileManager.default
-let root = fileManager.temporaryDirectory
-    .appendingPathComponent("LocalClassroomScannerSmokeTests")
-    .appendingPathComponent(UUID().uuidString)
 
-@MainActor func createDirectory(_ relativePath: String) throws {
+func leafName(_ relativePath: String) -> String {
+    String(relativePath.split(separator: "/").last ?? "")
+}
+
+@MainActor func createFile(at base: URL, _ relativePath: String, text: String = "") throws {
+    let url = base.appendingPathComponent(relativePath)
+    try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data(text.utf8).write(to: url)
+}
+
+@MainActor func createDirectory(at base: URL, _ relativePath: String) throws {
     try fileManager.createDirectory(
-        at: root.appendingPathComponent(relativePath, isDirectory: true),
+        at: base.appendingPathComponent(relativePath, isDirectory: true),
         withIntermediateDirectories: true
     )
 }
 
-@MainActor func createFile(_ relativePath: String) throws {
-    let url = root.appendingPathComponent(relativePath)
-    try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try Data().write(to: url)
+/// Builds a Lesson folder: the hidden `.lesson` marker, plus (by default) a
+/// media file named after the folder's own leaf name so its path is easy to
+/// predict from the call site.
+@MainActor func makeLessonFolder(
+    at base: URL,
+    _ relativePath: String,
+    hasMedia: Bool = true,
+    mediaExtension: String = "mp4",
+    notesFileName: String? = nil,
+    notesText: String = ""
+) throws {
+    let folderURL = base.appendingPathComponent(relativePath, isDirectory: true)
+    try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
+    try Data().write(to: folderURL.appendingPathComponent(ClassroomScanner.lessonMarkerFileName))
+
+    if hasMedia {
+        try Data().write(to: folderURL.appendingPathComponent("\(leafName(relativePath)).\(mediaExtension)"))
+    }
+
+    if let notesFileName {
+        try Data(notesText.utf8).write(to: folderURL.appendingPathComponent(notesFileName))
+    }
 }
 
-try createDirectory("01 Foundations/Mindset")
-try createDirectory("02 Prospecting")
-try createFile("01 Foundations/Lesson 10.mp4")
-try createFile("01 Foundations/Lesson 2.mp4")
-try createFile("01 Foundations/ignored.pdf")
-try createFile("01 Foundations/.hidden.mp4")
-try createFile("01 Foundations/Mindset/Fear.MOV")
-try createFile("01 Foundations/Mindset/Fear.m4v")
-try createFile("01 Foundations/Mindset/Notes.md")
-try createDirectory("01 Foundations/Mindset/Too Deep")
-try createFile("02 Prospecting/Welcome.MP4")
+func lessonMediaURL(at base: URL, _ relativePath: String, extension mediaExtension: String = "mp4") -> URL {
+    base.appendingPathComponent(relativePath, isDirectory: true)
+        .appendingPathComponent("\(leafName(relativePath)).\(mediaExtension)")
+}
+
+func lessonFolderURL(at base: URL, _ relativePath: String) -> URL {
+    base.appendingPathComponent(relativePath, isDirectory: true)
+}
+
+// MARK: - Scanner: lesson folders, markers, attachments, module descriptions
+
+let root = fileManager.temporaryDirectory
+    .appendingPathComponent("LocalClassroomScannerSmokeTests")
+    .appendingPathComponent(UUID().uuidString)
+
+try createFile(at: root, "01 Foundations/description.md", text: "Foundations of the craft.")
+try makeLessonFolder(at: root, "01 Foundations/Lesson 2")
+try makeLessonFolder(at: root, "01 Foundations/Lesson 10")
+try createFile(at: root, "01 Foundations/ignored.pdf")
+try makeLessonFolder(at: root, "01 Foundations/.Hidden Lesson")
+
+// Fear has two candidate media files (ambiguous), custom-named notes, and attachments.
+let fearFolder = root.appendingPathComponent("01 Foundations/Mindset/Fear", isDirectory: true)
+try fileManager.createDirectory(at: fearFolder, withIntermediateDirectories: true)
+try Data().write(to: fearFolder.appendingPathComponent(ClassroomScanner.lessonMarkerFileName))
+try Data().write(to: fearFolder.appendingPathComponent("Fear.MOV"))
+try Data().write(to: fearFolder.appendingPathComponent("Fear.m4v"))
+try Data("Fear notes.".utf8).write(to: fearFolder.appendingPathComponent("Fear-Notes.md"))
+try createFile(at: root, "01 Foundations/Mindset/Fear/Attachments/Handout.pdf")
+try createFile(at: root, "01 Foundations/Mindset/Fear/Attachments/Worksheet.txt")
+
+try makeLessonFolder(at: root, "01 Foundations/Mindset/Identity")
+try createFile(at: root, "01 Foundations/Mindset/Too Deep/whatever.txt")
+try makeLessonFolder(at: root, "02 Prospecting/Welcome", mediaExtension: "MP4")
 
 let classroom = ClassroomScanner().scan(rootURL: root)
 
@@ -53,18 +101,32 @@ expect(classroom.name == root.lastPathComponent, "Root folder name should become
 expect(classroom.modules.map(\.name) == ["01 Foundations", "02 Prospecting"], "Modules should come from root child folders")
 
 let foundations = classroom.modules[0]
+expect(foundations.description == "Foundations of the craft.", "Module description should be read from description.md")
+expect(classroom.modules[1].description == nil, "Modules without description.md should have no description")
 expect(foundations.directLessons.map(\.relativePath) == [
-    "01 Foundations/Lesson 2.mp4",
-    "01 Foundations/Lesson 10.mp4"
-], "Direct lessons should be naturally sorted and unsupported or hidden files ignored")
-expect(foundations.categories.map(\.name) == ["Mindset"], "Third-level folders should become categories")
-expect(Set(foundations.categories[0].lessons.map(\.relativePath)) == [
-    "01 Foundations/Mindset/Fear.m4v",
-    "01 Foundations/Mindset/Fear.MOV"
-], "Category videos should be parsed case-insensitively")
-expect(classroom.modules[1].directLessons[0].relativePath == "02 Prospecting/Welcome.MP4", "Uppercase video extensions should be supported")
-expect(classroom.warnings.contains { $0.kind == .unsupportedDepth }, "Over-deep folders should generate warnings")
-expect(classroom.warnings.contains { $0.kind == .duplicateVideoBasename }, "Duplicate video basenames should generate warnings")
+    "01 Foundations/Lesson 2",
+    "01 Foundations/Lesson 10"
+], "Direct lesson folders should be naturally sorted; stray files, unmarked, and hidden folders ignored")
+expect(foundations.directLessons[0].mediaURL?.lastPathComponent == "Lesson 2.mp4", "Direct lesson should resolve its media file")
+expect(!classroom.modules.flatMap(\.lessons).contains { $0.title == ".Hidden Lesson" }, "Hidden lesson folders should be ignored even with a marker file")
+
+expect(foundations.categories.map(\.name) == ["Mindset"], "Unmarked third-level folders should become categories")
+expect(foundations.categories[0].lessons.map(\.title) == ["Fear", "Identity"], "Category lesson folders should be naturally sorted")
+
+let fearLesson = foundations.categories[0].lessons[0]
+expect(
+    fearLesson.mediaURL?.lastPathComponent == "Fear.MOV" || fearLesson.mediaURL?.lastPathComponent == "Fear.m4v",
+    "Ambiguous lesson media should still resolve to one deterministic candidate"
+)
+expect(fearLesson.notesURL?.lastPathComponent == "Fear-Notes.md", "Lesson notes file should be resolved regardless of its name")
+expect(
+    Set(fearLesson.attachmentURLs.map(\.lastPathComponent)) == ["Handout.pdf", "Worksheet.txt"],
+    "Attachments folder contents should be exposed as attachment URLs"
+)
+
+expect(classroom.warnings.contains { $0.kind == .ambiguousLessonMedia }, "Multiple media files in one lesson folder should warn")
+expect(classroom.warnings.contains { $0.kind == .unsupportedDepth }, "Unmarked folders past category depth should warn")
+expect(classroom.modules[1].directLessons[0].mediaURL?.lastPathComponent == "Welcome.MP4", "Uppercase media extensions should be supported")
 
 let sidebar = ClassroomBrowserViewModel.sidebar(from: classroom)
 expect(sidebar.title == classroom.name, "Sidebar title should match classroom name")
@@ -97,6 +159,8 @@ expect(recentStore.list().map(\.path) == [thirdRoot.standardizedFileURL.path, ro
 recentStore.remove(path: root.path)
 expect(recentStore.list().map(\.path) == [thirdRoot.standardizedFileURL.path], "Recent storage should remove paths without deleting folders")
 
+// MARK: - View model: selection, navigation, and gallery/module state
+
 let viewModelDefaultsSuite = "LocalClassroomViewModelSmokeTests.\(UUID().uuidString)"
 guard let viewModelDefaults = UserDefaults(suiteName: viewModelDefaultsSuite) else {
     fatalError("Could not create view model smoke test user defaults")
@@ -115,19 +179,29 @@ let viewModel = await MainActor.run {
 await MainActor.run {
     viewModel.openFolder(root)
     expect(viewModel.sidebar?.modules.count == 2, "View model should expose sidebar sections after opening a classroom")
+    expect(viewModel.galleryModules.count == 2, "View model should expose gallery modules after opening a classroom")
+    expect(viewModel.galleryModules.first { $0.id == "01 Foundations" }?.description == "Foundations of the craft.", "Gallery module should carry the module description")
     expect(viewModel.recentClassrooms.first?.path == root.standardizedFileURL.path, "View model should add opened classrooms to recent storage")
+    expect(viewModel.selectedModule == nil, "Opening a classroom should not auto-select a module (gallery is the default view)")
 
-    guard let firstLesson = viewModel.sidebar?.modules[0].directLessons[0] else {
+    viewModel.openModule("01 Foundations")
+    expect(viewModel.selectedModule?.id == "01 Foundations", "Opening a module should select it")
+
+    guard let firstLesson = viewModel.selectedModule?.directLessons[0] else {
         fatalError("Expected a direct lesson for selection tests")
     }
     viewModel.selectLesson(firstLesson)
-    expect(viewModel.selectedLessonPath == "01 Foundations/Lesson 2.mp4", "View model should select lessons")
+    expect(viewModel.selectedLessonPath == "01 Foundations/Lesson 2", "View model should select lessons")
     viewModel.selectNextLesson()
-    expect(viewModel.selectedLessonPath == "01 Foundations/Lesson 10.mp4", "Next lesson should respect visible order")
+    expect(viewModel.selectedLessonPath == "01 Foundations/Lesson 10", "Next lesson should respect visible order")
     viewModel.selectNextLesson()
-    expect(viewModel.selectedLessonPath == "01 Foundations/Mindset/Fear.m4v" || viewModel.selectedLessonPath == "01 Foundations/Mindset/Fear.MOV", "Next lesson should move from direct lessons into category lessons")
+    expect(viewModel.selectedLessonPath == "01 Foundations/Mindset/Fear", "Next lesson should move from direct lessons into category lessons")
     viewModel.selectPreviousLesson()
-    expect(viewModel.selectedLessonPath == "01 Foundations/Lesson 10.mp4", "Previous lesson should respect visible order")
+    expect(viewModel.selectedLessonPath == "01 Foundations/Lesson 10", "Previous lesson should respect visible order")
+
+    viewModel.closeModule()
+    expect(viewModel.selectedModule == nil, "Closing a module should return to the gallery")
+    expect(viewModel.selectedLessonPath == nil, "Closing a module should clear the selected lesson")
 
     let missingRoot = root.deletingLastPathComponent().appendingPathComponent("Missing Classroom", isDirectory: true)
     viewModel.openFolder(missingRoot)
@@ -135,19 +209,15 @@ await MainActor.run {
     expect(viewModel.errorMessage != nil, "Missing classroom should produce a recoverable error state")
 }
 
+// MARK: - Metadata: lesson-folder identity, orphaning, malformed recovery
+
 let metadataRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
 let metadataStore = MetadataStore()
 let firstMetadataDate = Date(timeIntervalSince1970: 1_800_000_000)
 let secondMetadataDate = firstMetadataDate.addingTimeInterval(60)
 let thirdMetadataDate = secondMetadataDate.addingTimeInterval(60)
 
-@MainActor func createMetadataFile(_ relativePath: String) throws {
-    let url = metadataRoot.appendingPathComponent(relativePath)
-    try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try Data().write(to: url)
-}
-
-try createMetadataFile("Module/Alpha.mp4")
+try makeLessonFolder(at: metadataRoot, "Module/Alpha")
 let initialMetadataScan = ClassroomScanner().scan(rootURL: metadataRoot)
 let initialMetadataResult = metadataStore.loadMergeAndSave(classroom: initialMetadataScan, now: firstMetadataDate)
 expect(
@@ -155,10 +225,10 @@ expect(
     "Missing metadata should create .local-classroom/classroom.json"
 )
 expect(initialMetadataResult.metadata.schemaVersion == ClassroomMetadata.currentSchemaVersion, "Metadata should use the current schema version")
-expect(initialMetadataResult.metadata.lessonState["Module/Alpha.mp4"] == LessonState(), "Unknown scanned lessons should receive default state")
+expect(initialMetadataResult.metadata.lessonState["Module/Alpha"] == LessonState(), "Unknown scanned lessons should receive default state")
 
 var savedMetadata = initialMetadataResult.metadata
-savedMetadata.lessonState["Module/Alpha.mp4"] = LessonState(
+savedMetadata.lessonState["Module/Alpha"] = LessonState(
     playbackPositionSeconds: 42,
     completed: true,
     lastOpenedAt: firstMetadataDate
@@ -167,22 +237,22 @@ try metadataStore.save(savedMetadata, rootURL: metadataRoot)
 let reloadedSavedMetadata = try metadataStore.load(rootURL: metadataRoot)
 expect(reloadedSavedMetadata == savedMetadata, "Metadata writes should read back identically")
 
-try createMetadataFile("Module/Beta.mp4")
+try makeLessonFolder(at: metadataRoot, "Module/Beta")
 let addedLessonResult = metadataStore.loadMergeAndSave(classroom: ClassroomScanner().scan(rootURL: metadataRoot), now: secondMetadataDate)
-expect(addedLessonResult.metadata.lessonState["Module/Alpha.mp4"]?.playbackPositionSeconds == 42, "Existing lesson state should be preserved")
-expect(addedLessonResult.metadata.lessonState["Module/Beta.mp4"] == LessonState(), "Newly discovered lessons should be added to metadata")
+expect(addedLessonResult.metadata.lessonState["Module/Alpha"]?.playbackPositionSeconds == 42, "Existing lesson state should be preserved")
+expect(addedLessonResult.metadata.lessonState["Module/Beta"] == LessonState(), "Newly discovered lessons should be added to metadata")
 
-try fileManager.removeItem(at: metadataRoot.appendingPathComponent("Module/Alpha.mp4"))
+try fileManager.removeItem(at: lessonFolderURL(at: metadataRoot, "Module/Alpha"))
 let missingLessonResult = metadataStore.loadMergeAndSave(classroom: ClassroomScanner().scan(rootURL: metadataRoot), now: secondMetadataDate)
-expect(missingLessonResult.metadata.lessonState["Module/Alpha.mp4"]?.missingSince == secondMetadataDate, "Missing lessons should be marked orphaned")
+expect(missingLessonResult.metadata.lessonState["Module/Alpha"]?.missingSince == secondMetadataDate, "Missing lessons should be marked orphaned")
 
-try createMetadataFile("Module/Alpha.mp4")
+try makeLessonFolder(at: metadataRoot, "Module/Alpha")
 let restoredLessonResult = metadataStore.loadMergeAndSave(classroom: ClassroomScanner().scan(rootURL: metadataRoot), now: thirdMetadataDate)
-expect(restoredLessonResult.metadata.lessonState["Module/Alpha.mp4"]?.missingSince == nil, "Restored lesson paths should recover old state")
-expect(restoredLessonResult.metadata.lessonState["Module/Alpha.mp4"]?.playbackPositionSeconds == 42, "Restored lesson paths should preserve playback state")
+expect(restoredLessonResult.metadata.lessonState["Module/Alpha"]?.missingSince == nil, "Restored lesson paths should recover old state")
+expect(restoredLessonResult.metadata.lessonState["Module/Alpha"]?.playbackPositionSeconds == 42, "Restored lesson paths should preserve playback state")
 
 var orphanedMetadata = restoredLessonResult.metadata
-orphanedMetadata.lessonState["Module/Gone.mp4"] = LessonState(
+orphanedMetadata.lessonState["Module/Gone"] = LessonState(
     playbackPositionSeconds: 10,
     completed: false,
     lastOpenedAt: nil,
@@ -190,11 +260,10 @@ orphanedMetadata.lessonState["Module/Gone.mp4"] = LessonState(
 )
 try metadataStore.save(orphanedMetadata, rootURL: metadataRoot)
 let cleanedMetadataResult = metadataStore.loadMergeAndSave(classroom: ClassroomScanner().scan(rootURL: metadataRoot), now: thirdMetadataDate)
-expect(cleanedMetadataResult.metadata.lessonState["Module/Gone.mp4"] == nil, "Orphaned lesson state older than 30 days should be removed")
+expect(cleanedMetadataResult.metadata.lessonState["Module/Gone"] == nil, "Orphaned lesson state older than 30 days should be removed")
 
 let malformedRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
-try fileManager.createDirectory(at: malformedRoot.appendingPathComponent("Module", isDirectory: true), withIntermediateDirectories: true)
-try Data().write(to: malformedRoot.appendingPathComponent("Module/Lesson.mp4"))
+try makeLessonFolder(at: malformedRoot, "Module/Lesson")
 let malformedMetadataDirectory = malformedRoot.appendingPathComponent(MetadataStore.metadataDirectoryName, isDirectory: true)
 try fileManager.createDirectory(at: malformedMetadataDirectory, withIntermediateDirectories: true)
 try Data("{ nope".utf8).write(to: malformedMetadataDirectory.appendingPathComponent(MetadataStore.metadataFileName))
@@ -205,21 +274,23 @@ let malformedBackups = try fileManager.contentsOfDirectory(atPath: malformedMeta
 expect(malformedResult.warnings.contains { $0.kind == .malformedMetadata }, "Malformed metadata should produce a warning")
 expect(malformedBackups.count == 1, "Malformed metadata should be backed up")
 let recoveredMalformedMetadata = try metadataStore.load(rootURL: malformedRoot)
-expect(recoveredMalformedMetadata.lessonState["Module/Lesson.mp4"] != nil, "Classroom should remain usable after malformed metadata recovery")
+expect(recoveredMalformedMetadata.lessonState["Module/Lesson"] != nil, "Classroom should remain usable after malformed metadata recovery")
+
+// MARK: - Playback
 
 await MainActor.run {
     let playbackService = PlaybackService()
-    let validVideoURL = metadataRoot.appendingPathComponent("Module/Alpha.mp4")
-    playbackService.load(url: validVideoURL)
-    expect(playbackService.player != nil, "Playback service should initialize a player for an existing local video URL")
-    expect(playbackService.currentURL == validVideoURL.standardizedFileURL, "Playback service should retain the current URL")
+    let validMediaURL = lessonMediaURL(at: metadataRoot, "Module/Alpha")
+    playbackService.load(url: validMediaURL)
+    expect(playbackService.player != nil, "Playback service should initialize a player for an existing local media URL")
+    expect(playbackService.currentURL == validMediaURL.standardizedFileURL, "Playback service should retain the current URL")
 
     playbackService.setPlaybackRate(1.5)
     expect(playbackService.playbackRate == 1.5, "Playback service should store supported playback speed")
 
     playbackService.load(url: metadataRoot.appendingPathComponent("Module/Missing.mp4"))
-    expect(playbackService.player == nil, "Missing video should clear the player")
-    expect(playbackService.errorMessage != nil, "Missing video should produce a safe playback error")
+    expect(playbackService.player == nil, "Missing media should clear the player")
+    expect(playbackService.errorMessage != nil, "Missing media should produce a safe playback error")
 }
 
 expect(ProgressService.clampedPosition(-5, duration: 100) == 0, "Progress should clamp negative positions")
@@ -243,6 +314,8 @@ let manuallyIncompleteState = ProgressService.updatedState(
 expect(!manuallyIncompleteState.completed, "Manual incomplete should override automatic completion")
 expect(manuallyIncompleteState.completionOverride == .incomplete, "Manual incomplete override should be stored")
 
+// MARK: - Progress summaries through the view model
+
 let progressDefaultsSuite = "LocalClassroomProgressSmokeTests.\(UUID().uuidString)"
 guard let progressDefaults = UserDefaults(suiteName: progressDefaultsSuite) else {
     fatalError("Could not create progress smoke test user defaults")
@@ -262,7 +335,8 @@ await MainActor.run {
     progressViewModel.openFolder(metadataRoot)
     expect(progressViewModel.classroomProgress.totalLessons == 2, "Classroom progress should count visible lessons")
 
-    guard let alphaLesson = progressViewModel.sidebar?.modules[0].directLessons.first(where: { $0.relativePath == "Module/Alpha.mp4" }) else {
+    progressViewModel.openModule("Module")
+    guard let alphaLesson = progressViewModel.selectedModule?.directLessons.first(where: { $0.relativePath == "Module/Alpha" }) else {
         fatalError("Expected Alpha lesson for progress tests")
     }
 
@@ -276,36 +350,40 @@ await MainActor.run {
     expect(progressViewModel.selectedLesson?.state.completed == true, "Manual complete should update selected lesson state")
     expect(progressViewModel.classroomProgress.completedLessons == 1, "Classroom progress should count completed lessons")
     expect(
-        progressViewModel.sidebar?.modules[0].directLessons.first(where: { $0.relativePath == "Module/Alpha.mp4" })?.isCompleted == true,
+        progressViewModel.selectedModule?.directLessons.first(where: { $0.relativePath == "Module/Alpha" })?.isCompleted == true,
         "Sidebar lesson state should update after manual completion"
     )
     expect(progressViewModel.classroomProgress.percentage == 0.5, "Completion percentage should be correct")
+    expect(progressViewModel.galleryModules.first?.progress.completedLessons == 1, "Gallery module progress should reflect completion")
 }
 
 let persistedProgressMetadata = try metadataStore.load(rootURL: metadataRoot)
-expect(persistedProgressMetadata.lessonState["Module/Alpha.mp4"]?.playbackPositionSeconds == 55, "Playback state should survive metadata reload")
-expect(persistedProgressMetadata.lessonState["Module/Alpha.mp4"]?.completed == true, "Completion state should survive metadata reload")
+expect(persistedProgressMetadata.lessonState["Module/Alpha"]?.playbackPositionSeconds == 55, "Playback state should survive metadata reload")
+expect(persistedProgressMetadata.lessonState["Module/Alpha"]?.completed == true, "Completion state should survive metadata reload")
+
+// MARK: - Notes: default filename convention, load/save, autosave-on-switch
 
 let notesService = NotesService()
-let alphaVideoURL = metadataRoot.appendingPathComponent("Module/Alpha.mp4")
-let alphaNoteURL = metadataRoot.appendingPathComponent("Module/Alpha.md")
-let betaNoteURL = metadataRoot.appendingPathComponent("Module/Beta.md")
-let alphaLesson = Lesson(
-    relativePath: "Module/Alpha.mp4",
-    videoURL: alphaVideoURL,
-    notesURL: alphaNoteURL,
-    title: "Alpha",
-    fileExtension: "mp4"
+let alphaFolderURL = lessonFolderURL(at: metadataRoot, "Module/Alpha")
+let alphaNoteURL = alphaFolderURL.appendingPathComponent(NotesService.defaultNotesFileName)
+let betaFolderURL = lessonFolderURL(at: metadataRoot, "Module/Beta")
+let betaNoteURL = betaFolderURL.appendingPathComponent(NotesService.defaultNotesFileName)
+let alphaLessonForNotes = Lesson(
+    relativePath: "Module/Alpha",
+    folderURL: alphaFolderURL,
+    mediaURL: lessonMediaURL(at: metadataRoot, "Module/Alpha"),
+    notesURL: nil,
+    title: "Alpha"
 )
 
-expect(notesService.noteURL(for: alphaVideoURL) == alphaNoteURL, "Note URL should replace the video extension with md")
-let missingAlphaNoteText = try notesService.loadNotes(for: alphaLesson)
+expect(notesService.noteURL(for: alphaLessonForNotes) == alphaNoteURL, "Lessons without an existing notes file should fall back to the default notes filename")
+let missingAlphaNoteText = try notesService.loadNotes(for: alphaLessonForNotes)
 expect(missingAlphaNoteText == "", "Missing notes should load as empty text")
 expect(!fileManager.fileExists(atPath: alphaNoteURL.path), "Missing notes should stay absent until saved")
 
-try notesService.saveNotes("# Alpha\n\nPlain UTF-8 notes.", for: alphaLesson)
+try notesService.saveNotes("# Alpha\n\nPlain UTF-8 notes.", for: alphaLessonForNotes)
 expect(fileManager.fileExists(atPath: alphaNoteURL.path), "Saving notes should create the Markdown file")
-let savedAlphaNoteText = try notesService.loadNotes(for: alphaLesson)
+let savedAlphaNoteText = try notesService.loadNotes(for: alphaLessonForNotes)
 expect(savedAlphaNoteText == "# Alpha\n\nPlain UTF-8 notes.", "Existing UTF-8 notes should load")
 
 let notesDefaultsSuite = "LocalClassroomNotesSmokeTests.\(UUID().uuidString)"
@@ -325,11 +403,12 @@ let notesViewModel = await MainActor.run {
 
 await MainActor.run {
     notesViewModel.openFolder(metadataRoot)
+    notesViewModel.openModule("Module")
 
     guard
-        let module = notesViewModel.sidebar?.modules.first,
-        let alphaSidebarLesson = module.directLessons.first(where: { $0.relativePath == "Module/Alpha.mp4" }),
-        let betaSidebarLesson = module.directLessons.first(where: { $0.relativePath == "Module/Beta.mp4" })
+        let module = notesViewModel.selectedModule,
+        let alphaSidebarLesson = module.directLessons.first(where: { $0.relativePath == "Module/Alpha" }),
+        let betaSidebarLesson = module.directLessons.first(where: { $0.relativePath == "Module/Beta" })
     else {
         fatalError("Expected Alpha and Beta lessons for notes tests")
     }
@@ -361,25 +440,21 @@ expect(didFailToSaveLockedNote, "Saving into an unwritable notes directory shoul
 let preservedNoteText = try String(contentsOf: preservedNoteURL, encoding: .utf8)
 expect(preservedNoteText == "Original", "Failed atomic save should preserve the previous note")
 
-let orderingRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
-@MainActor func createOrderingFile(_ relativePath: String) throws {
-    let url = orderingRoot.appendingPathComponent(relativePath)
-    try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try Data().write(to: url)
-}
+// MARK: - Ordering: saved order keyed by lesson folder name
 
-try createOrderingFile("Module A/Lesson 2.mp4")
-try createOrderingFile("Module A/Lesson 10.mp4")
-try createOrderingFile("Module A/Category B/Cat Lesson 2.mp4")
-try createOrderingFile("Module A/Category A/Cat Lesson 10.mp4")
-try createOrderingFile("Module B/Welcome.mp4")
+let orderingRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
+try makeLessonFolder(at: orderingRoot, "Module A/Lesson 2")
+try makeLessonFolder(at: orderingRoot, "Module A/Lesson 10")
+try makeLessonFolder(at: orderingRoot, "Module A/Category B/Cat Lesson 2")
+try makeLessonFolder(at: orderingRoot, "Module A/Category A/Cat Lesson 10")
+try makeLessonFolder(at: orderingRoot, "Module B/Welcome")
 
 var orderingMetadata = ClassroomMetadata(
     moduleOrder: ["Module B", "Missing Module"],
     categoryOrder: ["Module A": ["Category B", "Missing Category"]],
     lessonOrder: [
-        "Module A": ["Lesson 10.mp4", "Missing.mp4"],
-        "Module A/Category A": ["Cat Lesson 10.mp4"]
+        "Module A": ["Lesson 10", "Missing"],
+        "Module A/Category A": ["Cat Lesson 10"]
     ]
 )
 try metadataStore.save(orderingMetadata, rootURL: orderingRoot)
@@ -387,12 +462,12 @@ try metadataStore.save(orderingMetadata, rootURL: orderingRoot)
 let orderedResult = metadataStore.loadMergeAndSave(classroom: ClassroomScanner().scan(rootURL: orderingRoot), now: firstMetadataDate)
 expect(orderedResult.classroom.modules.map(\.name) == ["Module B", "Module A"], "Saved module order should be respected and new modules appended naturally")
 expect(orderedResult.classroom.modules[1].categories.map(\.name) == ["Category B", "Category A"], "Saved category order should be respected and new categories appended naturally")
-expect(orderedResult.classroom.modules[1].directLessons.map { String($0.relativePath.split(separator: "/").last ?? "") } == ["Lesson 10.mp4", "Lesson 2.mp4"], "Saved direct lesson ordering should be respected")
+expect(orderedResult.classroom.modules[1].directLessons.map { String($0.relativePath.split(separator: "/").last ?? "") } == ["Lesson 10", "Lesson 2"], "Saved direct lesson ordering should be respected")
 expect(orderedResult.metadata.moduleOrder == ["Module B"], "Missing module ordering references should be removed during merge")
 expect(orderedResult.metadata.categoryOrder["Module A"] == ["Category B"], "Missing category ordering references should be removed during merge")
-expect(orderedResult.metadata.lessonOrder["Module A"] == ["Lesson 10.mp4"], "Missing lesson ordering references should be removed during merge")
+expect(orderedResult.metadata.lessonOrder["Module A"] == ["Lesson 10"], "Missing lesson ordering references should be removed during merge")
 
-try createOrderingFile("Module C/New.mp4")
+try makeLessonFolder(at: orderingRoot, "Module C/New")
 let appendedOrderingResult = metadataStore.loadMergeAndSave(classroom: ClassroomScanner().scan(rootURL: orderingRoot), now: secondMetadataDate)
 expect(appendedOrderingResult.classroom.modules.map(\.name) == ["Module B", "Module A", "Module C"], "New modules should append after saved order in natural order")
 
@@ -414,15 +489,17 @@ let orderingViewModel = await MainActor.run {
 await MainActor.run {
     orderingViewModel.openFolder(orderingRoot)
     orderingViewModel.moveModule(id: "Module C", offset: -1)
-    expect(orderingViewModel.sidebar?.modules.map(\.name) == ["Module B", "Module C", "Module A"], "Moving a module should update only module order")
+    expect(orderingViewModel.galleryModules.map(\.name) == ["Module B", "Module C", "Module A"], "Moving a module should update only module order")
     orderingViewModel.resetModuleOrder()
-    expect(orderingViewModel.sidebar?.modules.map(\.name) == ["Module A", "Module B", "Module C"], "Resetting module order should restore filename order")
-    orderingViewModel.moveDirectLesson(moduleID: "Module A", lessonID: "Module A/Lesson 10.mp4", offset: 1)
-    expect(orderingViewModel.sidebar?.modules.first?.directLessons.map(\.title) == ["Lesson 2", "Lesson 10"], "Moving direct lessons should update only direct lesson order")
+    expect(orderingViewModel.galleryModules.map(\.name) == ["Module A", "Module B", "Module C"], "Resetting module order should restore filename order")
+
+    orderingViewModel.openModule("Module A")
+    orderingViewModel.moveDirectLesson(moduleID: "Module A", lessonID: "Module A/Lesson 10", offset: 1)
+    expect(orderingViewModel.selectedModule?.directLessons.map(\.title) == ["Lesson 2", "Lesson 10"], "Moving direct lessons should update only direct lesson order")
 }
 
 let persistedOrderingMetadata = try metadataStore.load(rootURL: orderingRoot)
 expect(persistedOrderingMetadata.moduleOrder.isEmpty, "Reset module order should survive metadata reload")
-expect(persistedOrderingMetadata.lessonOrder["Module A"] == ["Lesson 2.mp4", "Lesson 10.mp4"], "Direct lesson order should survive metadata reload")
+expect(persistedOrderingMetadata.lessonOrder["Module A"] == ["Lesson 2", "Lesson 10"], "Direct lesson order should survive metadata reload")
 
 print("LocalClassroomSmokeTests passed")
