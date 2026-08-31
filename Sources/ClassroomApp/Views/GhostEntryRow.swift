@@ -9,6 +9,16 @@ import SwiftUI
 struct GhostEntryRow: View {
     @ObservedObject var viewModel: ClassroomBrowserViewModel
     let ghost: GhostEntry
+    /// "Transform to Lesson" only makes sense for a ghost folder sitting
+    /// directly under a Category (or the module) — the one depth the
+    /// scanner actually recognizes lessons at. A ghost folder found while
+    /// browsing *inside* a lesson can't become a nested lesson (there's no
+    /// such concept), so that context menu item is left off there.
+    var allowsTransform: Bool = true
+    /// Called when the user opens a file ghost (not a folder). Markdown
+    /// files open in-app; anything else is up to the caller (typically
+    /// NSWorkspace).
+    let onOpenFile: (URL) -> Void
 
     /// Drag payloads for ghost items are prefixed so drop targets (which
     /// also accept real lesson-ID drags for reparenting) can tell the two
@@ -28,13 +38,15 @@ struct GhostEntryRow: View {
             // same bug).
             DisclosureGroup {
                 ForEach(children) { child in
-                    GhostEntryRow(viewModel: viewModel, ghost: child)
+                    GhostEntryRow(viewModel: viewModel, ghost: child, allowsTransform: allowsTransform, onOpenFile: onOpenFile)
                 }
             } label: {
                 row
                     .contextMenu {
-                        Button("Transform to Lesson") {
-                            viewModel.beginTransform(folderURL: ghost.url)
+                        if allowsTransform {
+                            Button("Transform to Lesson") {
+                                viewModel.beginTransform(folderURL: ghost.url)
+                            }
                         }
                     }
                     .dropDestination(for: String.self) { ids, _ in
@@ -49,6 +61,7 @@ struct GhostEntryRow: View {
         } else {
             row
                 .draggable(Self.dragPrefix + ghost.url.path)
+                .onTapGesture { onOpenFile(ghost.url) }
         }
     }
 
@@ -68,7 +81,7 @@ struct GhostEntryRow: View {
             Spacer()
         }
         .opacity(0.6)
-        .help("Not part of the lesson/category structure yet")
+        .help(ghost.isDirectory ? "Not part of the lesson/category structure yet" : "Not part of the lesson/category structure yet — click to open")
     }
 
     /// Strips the ghost-drag prefix off a dropped ID, or returns `nil` if

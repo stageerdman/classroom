@@ -1,8 +1,9 @@
 # Phase 9 Checklist — Module Editing
 
 Tracks the `2026-08-30 MODULE-EDITOR` update and its
-`2026-08-31 MODULE-EDITOR-GHOST-BROWSING` and
-`2026-08-31 MODULE-EDITOR-UNDO-REDO` follow-ups: see those updates'
+`2026-08-31 MODULE-EDITOR-GHOST-BROWSING`,
+`2026-08-31 MODULE-EDITOR-UNDO-REDO`, and
+`2026-08-31 LESSON-FILES-MEDIA-MARKDOWN` follow-ups: see those updates'
 `update.md` for full rationale, including why the first version of this (a
 separate two-pane editor screen) was scrapped in favor of editing in
 place, why "Transform to Lesson" and ghost-folder browsing were revised
@@ -170,3 +171,26 @@ themselves need a real run-through before trusting them.
 - Make several edits in a row (rename, then create, then move), and hit
   undo multiple times: confirm each undo reverts exactly one step, in
   reverse order, rather than jumping back further or doing nothing.
+- Select a lesson with a stray subfolder inside it (not Attachments/
+  Removed); confirm it appears under "Other Files In This Lesson" with a
+  disclosure triangle, opens to show its contents, and does **not** offer
+  "Transform to Lesson" in its context menu (a folder inside a lesson
+  can't become a nested lesson).
+- Drag a stray file from inside a lesson's ghost section onto the
+  Attachments drop zone; confirm it's added as a real attachment.
+- Click a Markdown ghost/attachment file (not the lesson's own notes):
+  confirm it opens in a sheet with the same live-styled editor as notes,
+  edits save (wait ~1s or hit Done), and reopening shows the saved text.
+  Click a non-Markdown file; confirm it opens externally instead.
+- Put a lesson's only video as a `.flv` file; confirm it's picked as the
+  lesson's media (not treated as a stray file) and the player area shows
+  a clear message naming FLV and suggesting MP4/MOV, rather than a blank
+  or silently broken player.
+- In the notes editor (or a Markdown file opened via the sheet above),
+  type `# H1` through `###### H6`, `**bold**`, `*italic*`, `` `code` ``,
+  `> quote`, `- [ ] todo`, `- [x] done`, `- bullet`, `---`, and
+  `[a link](https://example.com)`. Confirm each renders distinctly (size/
+  weight/color) and that the raw syntax characters themselves are visibly
+  dimmed rather than matching the content's styling. Confirm Cmd-click on
+  the link opens it, and that the checked task list item is struck
+  through.

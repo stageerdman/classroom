@@ -11,6 +11,7 @@ struct ClassroomBrowserView: View {
     @State private var isTargetedHero = false
     @State private var isTargetedNotes = false
     @State private var isTargetedAttachments = false
+    @State private var openMarkdownFileURL: URL?
 
     var body: some View {
         Group {
@@ -57,6 +58,14 @@ struct ClassroomBrowserView: View {
             viewModel.saveSelectedNoteIfNeeded()
         }
         .frame(minWidth: 900, minHeight: 560)
+        .sheet(isPresented: Binding(
+            get: { openMarkdownFileURL != nil },
+            set: { if !$0 { openMarkdownFileURL = nil } }
+        )) {
+            if let openMarkdownFileURL {
+                MarkdownFileSheet(fileURL: openMarkdownFileURL, onDismiss: { self.openMarkdownFileURL = nil })
+            }
+        }
     }
 
     private func moduleDetailLayout(module: SidebarModule) -> some View {
@@ -66,7 +75,8 @@ struct ClassroomBrowserView: View {
                 module: module,
                 selectedSidebarID: $selectedSidebarID,
                 onSelectLesson: selectLesson,
-                onBack: { viewModel.closeModule() }
+                onBack: { viewModel.closeModule() },
+                onOpenGhostFile: openFile
             )
             .frame(width: 310)
 
@@ -260,7 +270,7 @@ struct ClassroomBrowserView: View {
             ForEach(attachmentURLs, id: \.self) { url in
                 HStack {
                     Button {
-                        NSWorkspace.shared.open(url)
+                        openFile(url)
                     } label: {
                         Label(url.lastPathComponent, systemImage: "paperclip")
                     }
@@ -296,6 +306,13 @@ struct ClassroomBrowserView: View {
                         }
                         return !urls.isEmpty
                     } isTargeted: { isTargetedAttachments = $0 }
+                    .dropDestination(for: String.self) { ids, _ in
+                        guard let payload = ids.first, let path = GhostEntryRow.strippedGhostPath(payload) else {
+                            return false
+                        }
+                        viewModel.addAttachmentToSelectedLesson(fileURL: URL(fileURLWithPath: path))
+                        return true
+                    }
             }
         }
     }
@@ -305,23 +322,23 @@ struct ClassroomBrowserView: View {
             Text("Other Files In This Lesson")
                 .font(.headline)
 
-            Text("Not the chosen media/notes, and not in Attachments — still on disk, not part of the lesson yet.")
+            Text("Not the chosen media/notes, and not in Attachments — still on disk, not part of the lesson yet. Folders open to browse what's inside; click a file to open it (Markdown opens in-app), or drag it into a category/attachments/another folder to move it.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             ForEach(ghosts) { ghost in
-                HStack {
-                    Image(systemName: ghost.isDirectory ? "folder" : "doc")
-                        .foregroundStyle(.tertiary)
-                    Text(ghost.name)
-                        .italic()
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                    Spacer()
-                }
-                .opacity(0.6)
-                .draggable(ghost.url)
+                GhostEntryRow(viewModel: viewModel, ghost: ghost, allowsTransform: false, onOpenFile: openFile)
             }
+        }
+    }
+
+    /// Markdown opens in the app's own live-styled editor; everything else
+    /// opens in whatever app the system has associated with it.
+    private func openFile(_ url: URL) {
+        if url.pathExtension.lowercased() == "md" {
+            openMarkdownFileURL = url
+        } else {
+            NSWorkspace.shared.open(url)
         }
     }
 

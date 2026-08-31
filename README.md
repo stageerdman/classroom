@@ -40,13 +40,28 @@ Classroom Root/                  Depth 1: Classroom
 A folder is a **Lesson** if it directly contains a hidden `.lesson` marker
 file — that's what lets a Lesson folder and a Category folder coexist at
 the same depth. A Lesson folder holds at most one playable media file
-(`.mp4`, `.mov`, `.m4v`, `.mp3`, `.m4a`, `.wav`), at most one `.md` notes
-file, and an optional `Attachments/` folder; attachments only show up in
-the UI when that folder is present and non-empty. Removing an attachment
-from the editor moves it into a `Removed/` folder inside that lesson
-rather than deleting it — visible in the editor's raw file tree, invisible
-to normal browsing, same as `Attachments/` is until it's the recognized
-folder.
+(`.mp4`, `.mov`, `.m4v`, `.mp3`, `.m4a`, `.wav`, `.flv`), at most one `.md`
+notes file, and an optional `Attachments/` folder; attachments only show
+up in the UI when that folder is present and non-empty. Removing an
+attachment from the editor moves it into a `Removed/` folder inside that
+lesson rather than deleting it — visible in the editor's raw file tree,
+invisible to normal browsing, same as `Attachments/` is until it's the
+recognized folder.
+
+`.flv` is recognized so a lesson built around one isn't silently treated
+as having no media, but macOS's AVFoundation has no FLV demuxer — playing
+one shows a clear "convert it to MP4 or MOV" message rather than a silent
+dead player. Any other file or folder sitting in a lesson's folder besides
+its chosen media/notes and `Attachments/`/`Removed/` shows up while
+editing as a dimmed "ghost" entry; ghost folders (anywhere — module,
+category, or inside a lesson) open to browse their contents recursively,
+and files/folders can be dragged between them to reorganize.
+
+Notes (and any Markdown file opened from a ghost/attachment while editing)
+render with live Obsidian-style styling as you type — `#`/`##`/`###`
+headers, `**bold**`, `*italic*`, `` `code` ``, `> quotes`, `- [ ]` task
+lists, and `[text](url)` links all get styled inline, with the raw syntax
+markers dimmed down rather than competing with the content for attention.
 
 This is a breaking format change from the original flat
 `Lesson Name.mp4` + `Lesson Name.md` layout — classrooms in the old format

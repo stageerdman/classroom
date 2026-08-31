@@ -81,6 +81,15 @@ struct MarkdownNotesView: NSViewRepresentable {
             onTextChange()
         }
 
+        private static let bodyFontSize: CGFloat = 15
+        /// (marker, header level's displayed font size) — checked in this
+        /// order; each requires an exact hash count immediately followed by
+        /// a space, so a line can only ever match one of these.
+        private static let headerMarkers: [(String, CGFloat)] = [
+            ("###### ", 15), ("##### ", 15.5), ("#### ", 16),
+            ("### ", 17), ("## ", 20), ("# ", 24)
+        ]
+
         @MainActor func applyMarkdownStyle() {
             guard let textView, !isApplyingStyle else {
                 return
@@ -94,30 +103,156 @@ struct MarkdownNotesView: NSViewRepresentable {
             let storage = textView.textStorage
             storage?.beginEditing()
             storage?.setAttributes([
-                .font: NSFont.systemFont(ofSize: 15),
+                .font: NSFont.systemFont(ofSize: Self.bodyFontSize),
                 .foregroundColor: NSColor.labelColor
             ], range: fullRange)
 
             let nsText = textView.string as NSString
             nsText.enumerateSubstrings(in: fullRange, options: [.byLines, .substringNotRequired]) { _, lineRange, _, _ in
-                let line = nsText.substring(with: lineRange)
-                if line.hasPrefix("# ") {
-                    storage?.addAttributes([.font: NSFont.boldSystemFont(ofSize: 24)], range: lineRange)
-                } else if line.hasPrefix("## ") {
-                    storage?.addAttributes([.font: NSFont.boldSystemFont(ofSize: 20)], range: lineRange)
-                } else if line.hasPrefix("### ") {
-                    storage?.addAttributes([.font: NSFont.boldSystemFont(ofSize: 17)], range: lineRange)
-                } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
-                    storage?.addAttributes([.font: NSFont.systemFont(ofSize: 15)], range: lineRange)
-                }
+                self.styleLine(nsText.substring(with: lineRange), in: lineRange, storage: storage)
             }
 
-            applyInlineMarkdown(pattern: "\\*\\*([^*]+)\\*\\*", font: .boldSystemFont(ofSize: 15))
-            applyInlineMarkdown(pattern: "(?<!\\*)\\*([^*]+)\\*(?!\\*)", font: NSFontManager.shared.convert(.systemFont(ofSize: 15), toHaveTrait: .italicFontMask))
+            applyDelimitedInlineStyle(
+                pattern: "\\*\\*([^*]+)\\*\\*",
+                contentGroup: 1,
+                contentAttributes: [.font: NSFont.boldSystemFont(ofSize: Self.bodyFontSize), .foregroundColor: NSColor.labelColor]
+            )
+            applyDelimitedInlineStyle(
+                pattern: "(?<!\\*)\\*([^*]+)\\*(?!\\*)",
+                contentGroup: 1,
+                contentAttributes: [
+                    .font: NSFontManager.shared.convert(.systemFont(ofSize: Self.bodyFontSize), toHaveTrait: .italicFontMask),
+                    .foregroundColor: NSColor.labelColor
+                ]
+            )
+            applyDelimitedInlineStyle(
+                pattern: "`([^`]+)`",
+                contentGroup: 1,
+                contentAttributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: Self.bodyFontSize - 1, weight: .regular),
+                    .foregroundColor: NSColor.labelColor,
+                    .backgroundColor: NSColor.textBackgroundColor.blended(withFraction: 0.5, of: .secondaryLabelColor) ?? NSColor.textBackgroundColor
+                ]
+            )
+            applyLinkStyle()
 
             storage?.endEditing()
             textView.setSelectedRange(selectedRange)
             updateContentHeight()
+        }
+
+        /// Line-level constructs: headers, blockquotes, checkboxes, plain
+        /// list bullets, and horizontal rules. Obsidian-style — the syntax
+        /// marker itself is dimmed down to a small secondary-color prefix
+        /// so the content it introduces is what actually reads as "the
+        /// heading" / "the quote" / etc., rather than the raw `##`/`>`/`-`
+        /// characters competing with it at the same size and weight.
+        @MainActor private func styleLine(_ line: String, in lineRange: NSRange, storage: NSTextStorage?) {
+            guard let storage else {
+                return
+            }
+
+            if let (marker, size) = Self.headerMarkers.first(where: { line.hasPrefix($0.0) }) {
+                applyMarker(marker, in: lineRange, storage: storage)
+                applyContent(
+                    after: marker,
+                    in: lineRange,
+                    storage: storage,
+                    attributes: [.font: NSFont.boldSystemFont(ofSize: size), .foregroundColor: NSColor.labelColor]
+                )
+                return
+            }
+
+            if line.hasPrefix("> ") {
+                applyMarker("> ", in: lineRange, storage: storage)
+                applyContent(
+                    after: "> ",
+                    in: lineRange,
+                    storage: storage,
+                    attributes: [
+                        .font: NSFontManager.shared.convert(.systemFont(ofSize: Self.bodyFontSize), toHaveTrait: .italicFontMask),
+                        .foregroundColor: NSColor.secondaryLabelColor
+                    ]
+                )
+                return
+            }
+
+            if let checkboxMatch = Self.checkboxRegex.firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) {
+                let markerLength = checkboxMatch.range.length
+                let isChecked = (line as NSString).substring(with: checkboxMatch.range(at: 1)).lowercased() == "x"
+                let markerRange = NSRange(location: lineRange.location, length: markerLength)
+                let contentRange = NSRange(location: lineRange.location + markerLength, length: lineRange.length - markerLength)
+                storage.addAttributes([.font: NSFont.systemFont(ofSize: Self.bodyFontSize), .foregroundColor: NSColor.tertiaryLabelColor], range: markerRange)
+                storage.addAttributes(
+                    isChecked
+                        ? [.font: NSFont.systemFont(ofSize: Self.bodyFontSize), .foregroundColor: NSColor.secondaryLabelColor, .strikethroughStyle: NSUnderlineStyle.single.rawValue]
+                        : [.font: NSFont.systemFont(ofSize: Self.bodyFontSize), .foregroundColor: NSColor.labelColor],
+                    range: contentRange
+                )
+                return
+            }
+
+            for bullet in ["- ", "* ", "+ "] where line.hasPrefix(bullet) {
+                applyMarker(bullet, in: lineRange, storage: storage)
+                return
+            }
+
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.count >= 3, Set(["-", "*", "_"]).contains(where: { trimmed == String(repeating: $0, count: trimmed.count) }) {
+                storage.addAttributes([.font: NSFont.systemFont(ofSize: Self.bodyFontSize), .foregroundColor: NSColor.tertiaryLabelColor], range: lineRange)
+            }
+        }
+
+        private func applyMarker(_ marker: String, in lineRange: NSRange, storage: NSTextStorage) {
+            let markerRange = NSRange(location: lineRange.location, length: min(marker.utf16.count, lineRange.length))
+            storage.addAttributes([.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.tertiaryLabelColor], range: markerRange)
+        }
+
+        private func applyContent(after marker: String, in lineRange: NSRange, storage: NSTextStorage, attributes: [NSAttributedString.Key: Any]) {
+            let markerLength = min(marker.utf16.count, lineRange.length)
+            let contentRange = NSRange(location: lineRange.location + markerLength, length: lineRange.length - markerLength)
+            guard contentRange.length > 0 else {
+                return
+            }
+            storage.addAttributes(attributes, range: contentRange)
+        }
+
+        private static let checkboxRegex = try! NSRegularExpression(pattern: "^[-*+] \\[([ xX])\\] ")
+
+        /// `[text](url)` — the link text is styled and made clickable
+        /// (Cmd-click, standard AppKit behavior for `.link`-attributed
+        /// text); the brackets/parens/URL portion is dimmed like every
+        /// other marker.
+        @MainActor private func applyLinkStyle() {
+            guard let textView, let storage = textView.textStorage else {
+                return
+            }
+
+            let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
+            guard let regex = try? NSRegularExpression(pattern: "\\[([^\\]]+)\\]\\(([^)]+)\\)") else {
+                return
+            }
+
+            let nsText = textView.string as NSString
+            for match in regex.matches(in: textView.string, range: fullRange) {
+                let textRange = match.range(at: 1)
+                let urlRange = match.range(at: 2)
+                guard textRange.location != NSNotFound, urlRange.location != NSNotFound else {
+                    continue
+                }
+
+                storage.addAttributes([.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.tertiaryLabelColor], range: match.range)
+
+                var linkAttributes: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: Self.bodyFontSize),
+                    .foregroundColor: NSColor.linkColor,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue
+                ]
+                if let url = URL(string: nsText.substring(with: urlRange)) {
+                    linkAttributes[.link] = url
+                }
+                storage.addAttributes(linkAttributes, range: textRange)
+            }
         }
 
         @MainActor func updateContentHeight() {
@@ -142,7 +277,12 @@ struct MarkdownNotesView: NSViewRepresentable {
             textView.frame.size.height = measuredHeight
         }
 
-        @MainActor private func applyInlineMarkdown(pattern: String, font: NSFont) {
+        /// A `marker CONTENT marker`-shaped inline construct (bold, italic,
+        /// inline code, ...): the whole match is dimmed as a marker first,
+        /// then `contentAttributes` overrides just the captured content
+        /// group, restoring its color/font to something that reads as
+        /// actual styled text rather than muted syntax.
+        @MainActor private func applyDelimitedInlineStyle(pattern: String, contentGroup: Int, contentAttributes: [NSAttributedString.Key: Any]) {
             guard let textView, let storage = textView.textStorage else {
                 return
             }
@@ -153,7 +293,12 @@ struct MarkdownNotesView: NSViewRepresentable {
             }
 
             for match in regex.matches(in: textView.string, range: fullRange) {
-                storage.addAttributes([.font: font], range: match.range)
+                storage.addAttributes([.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.tertiaryLabelColor], range: match.range)
+
+                let contentRange = match.range(at: contentGroup)
+                if contentRange.location != NSNotFound {
+                    storage.addAttributes(contentAttributes, range: contentRange)
+                }
             }
         }
     }

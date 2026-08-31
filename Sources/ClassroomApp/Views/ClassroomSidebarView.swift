@@ -15,6 +15,7 @@ struct ClassroomSidebarView: View {
     @Binding var selectedSidebarID: String?
     let onSelectLesson: (SidebarLesson) -> Void
     let onBack: () -> Void
+    let onOpenGhostFile: (URL) -> Void
 
     @State private var editableModuleName = ""
     @State private var editableDescription = ""
@@ -54,7 +55,7 @@ struct ClassroomSidebarView: View {
                         }
 
                         ForEach(moduleGhosts) { ghost in
-                            GhostEntryRow(viewModel: viewModel, ghost: ghost)
+                            GhostEntryRow(viewModel: viewModel, ghost: ghost, onOpenFile: onOpenGhostFile)
                         }
                     }
 
@@ -87,7 +88,7 @@ struct ClassroomSidebarView: View {
                                 }
 
                                 ForEach(categoryGhosts(category)) { ghost in
-                                    GhostEntryRow(viewModel: viewModel, ghost: ghost)
+                                    GhostEntryRow(viewModel: viewModel, ghost: ghost, onOpenFile: onOpenGhostFile)
                                 }
                             }
                         } label: {

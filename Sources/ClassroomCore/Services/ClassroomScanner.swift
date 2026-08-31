@@ -14,7 +14,14 @@ public struct ClassroomScanner {
     public static let attachmentsFolderDisplayName = "Attachments"
     public static let removedFolderDisplayName = "Removed"
     public static let moduleDescriptionFileName = "description.md"
-    public static let defaultMediaExtensions: Set<String> = ["mp4", "mov", "m4v", "mp3", "m4a", "wav"]
+    /// What counts as a lesson's playable media on disk — not the same as
+    /// what AVFoundation can actually *play*. `flv` in particular scans in
+    /// here (so a lesson with only a `.flv` video isn't silently treated as
+    /// having no media / dropped to a stray file) but macOS's AVFoundation
+    /// has no FLV demuxer; `PlaybackService` detects that failure and
+    /// surfaces a specific, actionable message rather than a silent dead
+    /// player. See `PlaybackService.knownUnplayableContainerExtensions`.
+    public static let defaultMediaExtensions: Set<String> = ["mp4", "mov", "m4v", "mp3", "m4a", "wav", "flv"]
 
     private let fileManager: FileManager
     private let supportedMediaExtensions: Set<String>

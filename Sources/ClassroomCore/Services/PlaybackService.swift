@@ -3,6 +3,13 @@ import Foundation
 
 @MainActor
 public final class PlaybackService: ObservableObject {
+    /// Containers AVFoundation has never had a demuxer for — recognized as
+    /// lesson media by the scanner (so they aren't silently treated as
+    /// stray files) but guaranteed to fail here. Callers can check this to
+    /// short-circuit straight to the actionable message instead of waiting
+    /// on the async player-item failure.
+    public static let knownUnplayableContainerExtensions: Set<String> = ["flv"]
+
     @Published public private(set) var player: AVPlayer?
     @Published public private(set) var currentURL: URL?
     @Published public private(set) var errorMessage: String?
@@ -11,6 +18,7 @@ public final class PlaybackService: ObservableObject {
     @Published public private(set) var durationSeconds: Double?
 
     private var periodicTimeObserver: Any?
+    private var statusObservation: NSKeyValueObservation?
 
     public init() {}
 
@@ -25,6 +33,14 @@ public final class PlaybackService: ObservableObject {
         }
 
         removePeriodicObserver()
+        statusObservation?.invalidate()
+
+        if Self.knownUnplayableContainerExtensions.contains(standardizedURL.pathExtension.lowercased()) {
+            player = nil
+            currentURL = standardizedURL
+            errorMessage = Self.unplayableContainerMessage(for: standardizedURL)
+            return
+        }
 
         let asset = AVURLAsset(url: standardizedURL)
         let item = AVPlayerItem(asset: asset)
@@ -35,6 +51,34 @@ public final class PlaybackService: ObservableObject {
         currentTimeSeconds = 0
         durationSeconds = nil
         installPeriodicObserver()
+        observeItemStatus(item, sourceURL: standardizedURL)
+    }
+
+    private static func unplayableContainerMessage(for url: URL) -> String {
+        let ext = url.pathExtension.uppercased()
+        return "\(ext) isn't supported by macOS's built-in video player (AVFoundation has no \(ext) demuxer). Convert it to MP4 or MOV to play it here."
+    }
+
+    private func observeItemStatus(_ item: AVPlayerItem, sourceURL: URL) {
+        statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            guard item.status == .failed else {
+                return
+            }
+            Task { @MainActor in
+                self?.handlePlaybackFailure(sourceURL: sourceURL, underlying: item.error)
+            }
+        }
+    }
+
+    private func handlePlaybackFailure(sourceURL: URL, underlying: Error?) {
+        // A stale callback from an item that's since been replaced by a
+        // newer `load(url:)` call — ignore it.
+        guard currentURL == sourceURL else {
+            return
+        }
+
+        player = nil
+        errorMessage = underlying?.localizedDescription ?? "The selected media could not be loaded."
     }
 
     public func play() {
@@ -65,6 +109,8 @@ public final class PlaybackService: ObservableObject {
     public func clear() {
         player?.pause()
         removePeriodicObserver()
+        statusObservation?.invalidate()
+        statusObservation = nil
         player = nil
         currentURL = nil
         errorMessage = nil

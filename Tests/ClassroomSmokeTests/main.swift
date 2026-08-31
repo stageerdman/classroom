@@ -94,6 +94,7 @@ try createFile(at: root, "01 Foundations/Mindset/Fear/Attachments/Worksheet.txt"
 try makeLessonFolder(at: root, "01 Foundations/Mindset/Identity")
 try createFile(at: root, "01 Foundations/Mindset/Too Deep/whatever.txt")
 try makeLessonFolder(at: root, "02 Prospecting/Welcome", mediaExtension: "MP4")
+try makeLessonFolder(at: root, "02 Prospecting/Legacy Recording", mediaExtension: "flv")
 
 let classroom = ClassroomScanner().scan(rootURL: root)
 
@@ -113,6 +114,10 @@ expect(!classroom.modules.flatMap(\.lessons).contains { $0.title == ".Hidden Les
 expect(foundations.categories.map(\.name) == ["Mindset"], "Unmarked third-level folders should become categories")
 expect(foundations.categories[0].lessons.map(\.title) == ["Fear", "Identity"], "Category lesson folders should be naturally sorted")
 
+let prospecting = classroom.modules[1]
+let legacyRecording = prospecting.directLessons.first { $0.title == "Legacy Recording" }
+expect(legacyRecording?.mediaURL?.pathExtension.lowercased() == "flv", "A .flv file should be recognized as the lesson's media, not treated as a stray file — even though AVFoundation can't actually play it (see PlaybackService.knownUnplayableContainerExtensions)")
+
 let fearLesson = foundations.categories[0].lessons[0]
 expect(
     fearLesson.mediaURL?.lastPathComponent == "Fear.MOV" || fearLesson.mediaURL?.lastPathComponent == "Fear.m4v",
@@ -126,7 +131,8 @@ expect(
 
 expect(classroom.warnings.contains { $0.kind == .ambiguousLessonMedia }, "Multiple media files in one lesson folder should warn")
 expect(classroom.warnings.contains { $0.kind == .unsupportedDepth }, "Unmarked folders past category depth should warn")
-expect(classroom.modules[1].directLessons[0].mediaURL?.lastPathComponent == "Welcome.MP4", "Uppercase media extensions should be supported")
+let welcomeLesson = classroom.modules[1].directLessons.first { $0.title == "Welcome" }
+expect(welcomeLesson?.mediaURL?.lastPathComponent == "Welcome.MP4", "Uppercase media extensions should be supported")
 
 let sidebar = ClassroomBrowserViewModel.sidebar(from: classroom)
 expect(sidebar.title == classroom.name, "Sidebar title should match classroom name")
@@ -291,6 +297,12 @@ await MainActor.run {
     playbackService.load(url: metadataRoot.appendingPathComponent("Module/Missing.mp4"))
     expect(playbackService.player == nil, "Missing media should clear the player")
     expect(playbackService.errorMessage != nil, "Missing media should produce a safe playback error")
+
+    let flvURL = metadataRoot.appendingPathComponent("Module/Legacy.flv")
+    try? Data().write(to: flvURL)
+    playbackService.load(url: flvURL)
+    expect(playbackService.player == nil, "A .flv file should short-circuit to no player rather than a silently-broken one")
+    expect(playbackService.errorMessage?.contains("FLV") == true, "The .flv error message should name the actual problem so the user knows to convert it")
 }
 
 expect(ProgressService.clampedPosition(-5, duration: 100) == 0, "Progress should clamp negative positions")
