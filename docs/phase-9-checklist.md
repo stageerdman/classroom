@@ -1,16 +1,19 @@
 # Phase 9 Checklist — Module Editing
 
 Tracks the `2026-08-30 MODULE-EDITOR` update and its
-`2026-08-31 MODULE-EDITOR-GHOST-BROWSING` follow-up: see those updates'
+`2026-08-31 MODULE-EDITOR-GHOST-BROWSING` and
+`2026-08-31 MODULE-EDITOR-UNDO-REDO` follow-ups: see those updates'
 `update.md` for full rationale, including why the first version of this (a
 separate two-pane editor screen) was scrapped in favor of editing in
-place, and why "Transform to Lesson" and ghost-folder browsing were
-revised after real-world testing. This UI was built without any way to
-drive a macOS GUI in the build environment — automated coverage exercises
-every underlying operation (transform, create, rename, move, import,
-attachment lifecycle, metadata migration) against a real filesystem, but
-the drag-and-drop interactions themselves need a real run-through before
-trusting them.
+place, why "Transform to Lesson" and ghost-folder browsing were revised
+after real-world testing, and — most importantly — why a right-click on a
+nested ghost folder was transforming the wrong thing (a `.contextMenu`
+scoping bug) and how undo/redo now works. This UI was built without any
+way to drive a macOS GUI in the build environment — automated coverage
+exercises every underlying operation (transform, create, rename, move,
+import, attachment lifecycle, metadata migration, undo/redo) against a
+real filesystem, but the drag-and-drop and right-click interactions
+themselves need a real run-through before trusting them.
 
 ## Scope
 
@@ -46,6 +49,16 @@ trusting them.
   Category). A folder with an `Attachments` folder, a `Removed` folder, or
   any other unmarked subfolder is a valid transform target — those
   subfolders are left alone and surface as ghosts inside the new lesson.
+- A right-click (or drag) on a row nested inside an expanded category or
+  ghost folder acts on *that row*, not on its ancestor — interaction
+  modifiers live on each row's own label, not on the enclosing
+  `DisclosureGroup`, which previously let an outer row's context menu
+  swallow clicks meant for something nested inside it.
+- **Undo/Redo** (Cmd-Z / Cmd-Shift-Z, and the Edit menu) cover rename
+  (module/category/lesson), create (category/lesson), move/reparent
+  (lesson and ghost), Transform to Lesson, and Move to Trash. Not covered:
+  reordering, notes text, playback/completion state, module description,
+  and lesson-level hero-media/attachment/notes-link edits.
 
 ## Automated Verification
 
@@ -133,3 +146,27 @@ trusting them.
   require no special checking, since ghost rendering is entirely gated
   behind the same `isEditingModule` flag as every other editing
   affordance.
+- **The bug that prompted this round**: put an unmarked folder with just a
+  loose file inside a category (so it reads as a nested ghost folder),
+  expand the category, right-click the *nested ghost folder specifically*
+  → **Transform to Lesson**. Confirm only that folder becomes a lesson —
+  the category itself must be untouched and still contain everything else
+  it had. Do the same one level deeper (a ghost folder nested inside
+  another ghost folder) to confirm the fix holds recursively.
+- Rename a category, then press **Cmd-Z**: confirm it reverts to the old
+  name; press **Cmd-Shift-Z**: confirm it's renamed again. Check the Edit
+  menu shows "Undo"/"Redo" items too, not just the shortcuts.
+- Create a new lesson, then undo: confirm it's gone from the sidebar (and
+  recoverable from the real macOS Trash, same as an explicit Move to
+  Trash); redo: confirm it reappears.
+- Drag a lesson into a different category, undo: confirm it's back in its
+  original spot; redo: confirm it moves again.
+- Transform a ghost folder into a lesson, undo: confirm it's back to a
+  plain ghost folder with its original files intact (not archived into
+  Attachments); redo: confirm it becomes a lesson again.
+- Move a lesson to Trash, undo: confirm it's restored to its exact
+  original location in the sidebar (not just "a" lesson with that name —
+  the same one, same folder); redo: confirm it's trashed again.
+- Make several edits in a row (rename, then create, then move), and hit
+  undo multiple times: confirm each undo reverts exactly one step, in
+  reverse order, rather than jumping back further or doing nothing.

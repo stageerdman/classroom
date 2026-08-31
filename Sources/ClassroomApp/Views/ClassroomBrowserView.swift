@@ -46,6 +46,12 @@ struct ClassroomBrowserView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshClassroomRequested)) { _ in
             viewModel.refresh()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .undoEditRequested)) { _ in
+            viewModel.undoManager.undo()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .redoEditRequested)) { _ in
+            viewModel.undoManager.redo()
+        }
         .onDisappear {
             noteAutosaveTask?.cancel()
             viewModel.saveSelectedNoteIfNeeded()

@@ -179,6 +179,72 @@ final class ClassroomEditorServiceTests: XCTestCase {
         XCTAssertTrue(fileManager.fileExists(atPath: moved.path))
     }
 
+    // MARK: Trash / restore (undo support)
+
+    func testTrashReturnsTheResultingLocationAndRestoreMovesItBackExactly() throws {
+        let parent = try makeTempDirectory()
+        defer { try? fileManager.removeItem(at: parent) }
+
+        let lesson = try service.createLesson(in: parent, name: "Lesson")
+        let trashedURL = try service.trash(lesson)
+
+        XCTAssertFalse(fileManager.fileExists(atPath: lesson.path))
+        XCTAssertTrue(fileManager.fileExists(atPath: trashedURL.path))
+
+        try service.restore(trashedURL, to: lesson)
+        XCTAssertTrue(fileManager.fileExists(atPath: lesson.path))
+        XCTAssertFalse(fileManager.fileExists(atPath: trashedURL.path))
+    }
+
+    func testRestoreRejectsCollisionAtDestination() throws {
+        let parent = try makeTempDirectory()
+        defer { try? fileManager.removeItem(at: parent) }
+
+        let lesson = try service.createLesson(in: parent, name: "Lesson")
+        let trashedURL = try service.trash(lesson)
+        _ = try service.createLesson(in: parent, name: "Lesson") // something new now occupies the original spot
+
+        XCTAssertThrowsError(try service.restore(trashedURL, to: lesson)) { error in
+            XCTAssertEqual(error as? ClassroomEditorService.EditorError, .nameCollision)
+        }
+    }
+
+    // MARK: Undo support — transform
+
+    func testUndoTransformToLessonRestoresArchivedFilesAndRemovesTheMarker() throws {
+        let folder = try makeTempDirectory()
+        defer { try? fileManager.removeItem(at: folder) }
+
+        try write(folder, "Lesson.mp4")
+        try write(folder, "Extra.pdf")
+
+        let result = try service.transformToLesson(folder)
+        XCTAssertTrue(fileManager.fileExists(atPath: folder.appendingPathComponent(ClassroomScanner.lessonMarkerFileName).path))
+        XCTAssertTrue(fileManager.fileExists(atPath: folder.appendingPathComponent("Attachments/Extra.pdf").path))
+
+        try service.undoTransformToLesson(folder, result: result)
+
+        XCTAssertFalse(fileManager.fileExists(atPath: folder.appendingPathComponent(ClassroomScanner.lessonMarkerFileName).path), "Marker should be gone")
+        XCTAssertTrue(fileManager.fileExists(atPath: folder.appendingPathComponent("Extra.pdf").path), "Archived file should move back to the folder root")
+        XCTAssertFalse(fileManager.fileExists(atPath: folder.appendingPathComponent("Attachments").path), "The freshly-created Attachments folder should be removed once emptied")
+        XCTAssertTrue(fileManager.fileExists(atPath: folder.appendingPathComponent("Lesson.mp4").path), "The chosen media, which never moved, should still be there")
+    }
+
+    func testUndoTransformToLessonKeepsAPreExistingAttachmentsFolder() throws {
+        let folder = try makeTempDirectory()
+        defer { try? fileManager.removeItem(at: folder) }
+
+        try write(folder, "Lesson.mp4")
+        let attachments = folder.appendingPathComponent("Attachments")
+        try fileManager.createDirectory(at: attachments, withIntermediateDirectories: true)
+        try write(attachments, "PreExisting.pdf")
+
+        let result = try service.transformToLesson(folder)
+        try service.undoTransformToLesson(folder, result: result)
+
+        XCTAssertTrue(fileManager.fileExists(atPath: attachments.appendingPathComponent("PreExisting.pdf").path), "A pre-existing Attachments folder (not created by the transform) should survive undo")
+    }
+
     // MARK: Import / attachments
 
     func testImportMovesSourceAndDisambiguatesNameCollisions() throws {

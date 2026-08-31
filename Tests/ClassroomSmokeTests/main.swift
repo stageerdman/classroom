@@ -738,6 +738,81 @@ await MainActor.run {
     expect(oldFileGone, "The ghost file should no longer exist at its old location after the move")
 }
 
+// MARK: - Undo/redo (Cmd-Z / Cmd-Shift-Z) for the structural editing operations
+
+await MainActor.run {
+    // Rename
+    editingVM.renameCategory(categoryID: "Module A Renamed/CategoryZ", to: "CategoryZ Renamed")
+    expect(editingVM.selectedModule?.categories.contains { $0.name == "CategoryZ Renamed" } == true, "Category should be renamed")
+
+    editingVM.undoManager.undo()
+    expect(editingVM.selectedModule?.categories.contains { $0.name == "CategoryZ" } == true, "Undo should rename the category back")
+    expect(editingVM.selectedModule?.categories.contains { $0.name == "CategoryZ Renamed" } != true, "Renamed name should be gone after undo")
+
+    editingVM.undoManager.redo()
+    expect(editingVM.selectedModule?.categories.contains { $0.name == "CategoryZ Renamed" } == true, "Redo should reapply the rename")
+    // Leaves the category as "CategoryZ Renamed" — the Move check below relies on it.
+
+    // Create
+    editingVM.createCategory(name: "Undo Create Category")
+    expect(editingVM.selectedModule?.categories.contains { $0.name == "Undo Create Category" } == true, "New category should appear immediately")
+
+    editingVM.undoManager.undo()
+    expect(editingVM.selectedModule?.categories.contains { $0.name == "Undo Create Category" } != true, "Undo of create should remove the category (to Trash, recoverably)")
+
+    editingVM.undoManager.redo()
+    expect(editingVM.selectedModule?.categories.contains { $0.name == "Undo Create Category" } == true, "Redo should recreate the category")
+    editingVM.undoManager.undo() // clean up
+
+    // Move (reparent)
+    editingVM.createDirectLesson(name: "Undo Move Lesson")
+    expect(editingVM.selectedModule?.directLessons.contains { $0.title == "Undo Move Lesson" } == true, "Lesson should be created directly under the module")
+
+    editingVM.moveLesson(lessonID: "Module A Renamed/Undo Move Lesson", toCategoryID: "Module A Renamed/CategoryZ Renamed")
+    expect(editingVM.selectedModule?.categories.first { $0.name == "CategoryZ Renamed" }?.lessons.contains { $0.title == "Undo Move Lesson" } == true, "Lesson should now be inside the category")
+    expect(editingVM.selectedModule?.directLessons.contains { $0.title == "Undo Move Lesson" } != true, "Lesson should no longer be a direct lesson")
+
+    editingVM.undoManager.undo()
+    expect(editingVM.selectedModule?.directLessons.contains { $0.title == "Undo Move Lesson" } == true, "Undo should move the lesson back to direct lessons")
+    expect(editingVM.selectedModule?.categories.first { $0.name == "CategoryZ Renamed" }?.lessons.contains { $0.title == "Undo Move Lesson" } != true, "Lesson should no longer be in the category after undoing the move")
+
+    editingVM.undoManager.redo()
+    expect(editingVM.selectedModule?.categories.first { $0.name == "CategoryZ Renamed" }?.lessons.contains { $0.title == "Undo Move Lesson" } == true, "Redo should move the lesson back into the category")
+
+    // Trash / restore
+    editingVM.trashLesson(lessonID: "Module A Renamed/CategoryZ Renamed/Undo Move Lesson")
+    expect(editingVM.selectedModule?.categories.first { $0.name == "CategoryZ Renamed" }?.lessons.contains { $0.title == "Undo Move Lesson" } != true, "Trashed lesson should be gone from the sidebar")
+
+    editingVM.undoManager.undo()
+    expect(editingVM.selectedModule?.categories.first { $0.name == "CategoryZ Renamed" }?.lessons.contains { $0.title == "Undo Move Lesson" } == true, "Undo should restore the lesson from Trash to its exact original location")
+
+    editingVM.undoManager.redo()
+    expect(editingVM.selectedModule?.categories.first { $0.name == "CategoryZ Renamed" }?.lessons.contains { $0.title == "Undo Move Lesson" } != true, "Redo should trash it again")
+
+    editingVM.undoManager.undo() // restore once more, then leave it trashed via a final undo below
+    editingVM.trashLesson(lessonID: "Module A Renamed/CategoryZ Renamed/Undo Move Lesson") // clean up: remove the scratch lesson for good
+}
+
+// Transform
+try createFile(at: editingVMRoot, "Module A Renamed/Undo Transform Folder/Video.mp4")
+
+await MainActor.run {
+    editingVM.refresh()
+
+    let transformFolderURL = editingVMRoot.appendingPathComponent("Module A Renamed/Undo Transform Folder", isDirectory: true)
+    editingVM.beginTransform(folderURL: transformFolderURL)
+    expect(editingVM.errorMessage == nil, "Transform should succeed")
+    expect(editingVM.selectedModule?.directLessons.contains { $0.title == "Undo Transform Folder" } == true, "Folder should now scan as a lesson")
+
+    editingVM.undoManager.undo()
+    expect(editingVM.selectedModule?.directLessons.contains { $0.title == "Undo Transform Folder" } != true, "Undo should remove the lesson marker, reading back as a plain folder")
+    let videoStillThere = fileManager.fileExists(atPath: transformFolderURL.appendingPathComponent("Video.mp4").path)
+    expect(videoStillThere, "The original file should still be exactly where it was, not archived")
+
+    editingVM.undoManager.redo()
+    expect(editingVM.selectedModule?.directLessons.contains { $0.title == "Undo Transform Folder" } == true, "Redo should transform it into a lesson again")
+}
+
 let ghostTransformScan = ClassroomScanner().scan(rootURL: editingVMRoot)
 let ghostTransformedLesson = ghostTransformScan.modules.first { $0.name == "Module A Renamed" }?
     .categories.first { $0.name == "New Category" }?

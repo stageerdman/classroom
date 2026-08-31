@@ -91,11 +91,18 @@ struct ClassroomSidebarView: View {
                                 }
                             }
                         } label: {
+                            // contextMenu/dropDestination are scoped to the
+                            // label, not the whole DisclosureGroup — attach
+                            // them to the group instead and a right-click or
+                            // drop anywhere inside its *expanded content*
+                            // (a nested ghost row, a lesson row) gets
+                            // misattributed to the category itself instead
+                            // of the row actually under the cursor.
                             categoryLabel(category)
-                        }
-                        .contextMenu { categoryContextMenu(category) }
-                        .dropDestination(for: String.self) { ids, _ in
-                            return handleReparentDrop(ids, categoryID: category.id)
+                                .contextMenu { categoryContextMenu(category) }
+                                .dropDestination(for: String.self) { ids, _ in
+                                    return handleReparentDrop(ids, categoryID: category.id)
+                                }
                         }
                     }
                     .onMove { source, destination in

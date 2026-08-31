@@ -25,6 +25,26 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     @Published public private(set) var isEditingModule = false
     @Published public private(set) var pendingTransform: PendingTransform?
 
+    /// Undo/redo for the structural editing operations (rename, create,
+    /// move/reparent, transform-to-lesson, trash) — wired to the system
+    /// Edit menu's Undo/Redo commands (and Cmd-Z / Cmd-Shift-Z) via
+    /// `.environment(\.undoManager, viewModel.undoManager)` on the root
+    /// view. Playback progress, notes text, ordering, and lesson media/
+    /// attachment edits are intentionally not covered — lower risk, and
+    /// notes/ordering already have their own recovery paths.
+    public let undoManager: UndoManager = {
+        let manager = UndoManager()
+        // Without this, grouping is tied to the run loop's notion of an
+        // "event" — fine in a normal app, but it means a registration and
+        // an immediate `undo()` right after (as in automated tests, or two
+        // edits made in the same runloop turn) can land in the same group
+        // or hit an unclosed-group state. Grouping every registration
+        // explicitly (see `registerUndoRedo` etc.) makes each edit its own
+        // undo step regardless of timing.
+        manager.groupsByEvent = false
+        return manager
+    }()
+
     private let scanner: ClassroomScanner
     private let recentStore: RecentClassroomStore
     private let accessStore: FolderAccessStore
@@ -300,18 +320,39 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     // MARK: Editing — module
 
     public func renameCurrentModule(to newName: String) {
-        guard let module = currentModuleModel(), let moduleURL = url(forRelativePath: module.relativePath) else {
+        guard let module = currentModuleModel() else {
             return
+        }
+        let oldPath = module.relativePath
+        let oldLeafName = oldPath.fileName
+
+        guard let newPath = performRenameModule(moduleID: oldPath, to: newName) else {
+            return
+        }
+
+        registerUndoRedo(
+            actionName: "Rename",
+            undoAction: { [weak self] in self?.performRenameModule(moduleID: newPath, to: oldLeafName) },
+            redoAction: { [weak self] in self?.performRenameModule(moduleID: oldPath, to: newName) }
+        )
+    }
+
+    @discardableResult
+    private func performRenameModule(moduleID: String, to newName: String) -> String? {
+        guard let moduleURL = url(forRelativePath: moduleID) else {
+            return nil
         }
 
         do {
             _ = try editorService.rename(moduleURL, to: newName)
             let newRelativePath = trimmedName(newName)
-            try migratePath(kind: .module, oldPath: module.relativePath, newPath: newRelativePath)
+            try migratePath(kind: .module, oldPath: moduleID, newPath: newRelativePath)
             selectedModuleID = newRelativePath
             refresh()
+            return newRelativePath
         } catch {
             errorMessage = Self.editorErrorMessage(for: error)
+            return nil
         }
     }
 
@@ -336,8 +377,13 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
 
         do {
-            _ = try editorService.createLesson(in: moduleURL, name: name)
+            let createdURL = try editorService.createLesson(in: moduleURL, name: name)
             refresh()
+            registerUndoRedo(
+                actionName: "Create Lesson",
+                undoAction: { [weak self] in self?.trashAndRefresh(createdURL) },
+                redoAction: { [weak self] in self?.recreateLesson(in: moduleURL, name: name) }
+            )
         } catch {
             errorMessage = Self.editorErrorMessage(for: error)
         }
@@ -349,8 +395,13 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
 
         do {
-            _ = try editorService.createCategory(in: moduleURL, name: name)
+            let createdURL = try editorService.createCategory(in: moduleURL, name: name)
             refresh()
+            registerUndoRedo(
+                actionName: "Create Category",
+                undoAction: { [weak self] in self?.trashAndRefresh(createdURL) },
+                redoAction: { [weak self] in self?.recreateCategory(in: moduleURL, name: name) }
+            )
         } catch {
             errorMessage = Self.editorErrorMessage(for: error)
         }
@@ -362,68 +413,165 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
 
         do {
-            _ = try editorService.createLesson(in: categoryURL, name: name)
+            let createdURL = try editorService.createLesson(in: categoryURL, name: name)
+            refresh()
+            registerUndoRedo(
+                actionName: "Create Lesson",
+                undoAction: { [weak self] in self?.trashAndRefresh(createdURL) },
+                redoAction: { [weak self] in self?.recreateLesson(in: categoryURL, name: name) }
+            )
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    private func recreateLesson(in parentURL: URL, name: String) {
+        do {
+            _ = try editorService.createLesson(in: parentURL, name: name)
             refresh()
         } catch {
             errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    private func recreateCategory(in parentURL: URL, name: String) {
+        do {
+            _ = try editorService.createCategory(in: parentURL, name: name)
+            refresh()
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    /// Undo for "create" — sends the newly created (and possibly since
+    /// populated) folder to the real Trash rather than deleting it outright,
+    /// so nothing dropped into it before the undo is silently lost.
+    private func trashAndRefresh(_ url: URL) {
+        let path = relativePath(for: url)
+        do {
+            try editorService.trash(url)
+            if selectedLessonPath == path || selectedLessonPath?.hasPrefix(path + "/") == true {
+                clearSelectedLesson()
+            }
+            refresh()
+        } catch {
+            errorMessage = "Could not move to Trash."
         }
     }
 
     // MARK: Editing — rename / move / trash
 
     public func renameCategory(categoryID: String, to newName: String) {
-        guard let categoryURL = url(forRelativePath: categoryID) else {
+        let oldLeafName = categoryID.fileName
+
+        guard let newPath = performRenameCategory(categoryID: categoryID, to: newName) else {
             return
+        }
+
+        registerUndoRedo(
+            actionName: "Rename",
+            undoAction: { [weak self] in self?.performRenameCategory(categoryID: newPath, to: oldLeafName) },
+            redoAction: { [weak self] in self?.performRenameCategory(categoryID: categoryID, to: newName) }
+        )
+    }
+
+    @discardableResult
+    private func performRenameCategory(categoryID: String, to newName: String) -> String? {
+        guard let categoryURL = url(forRelativePath: categoryID) else {
+            return nil
         }
 
         do {
             let newURL = try editorService.rename(categoryURL, to: newName)
-            try migratePath(kind: .category, oldPath: categoryID, newPath: relativePath(for: newURL))
+            let newPath = relativePath(for: newURL)
+            try migratePath(kind: .category, oldPath: categoryID, newPath: newPath)
             refresh()
+            return newPath
         } catch {
             errorMessage = Self.editorErrorMessage(for: error)
+            return nil
         }
     }
 
     public func renameLesson(lessonID: String, to newName: String) {
-        guard let lessonURL = url(forRelativePath: lessonID) else {
+        let oldLeafName = lessonID.fileName
+
+        guard let newPath = performRenameLesson(lessonID: lessonID, to: newName) else {
             return
+        }
+
+        registerUndoRedo(
+            actionName: "Rename",
+            undoAction: { [weak self] in self?.performRenameLesson(lessonID: newPath, to: oldLeafName) },
+            redoAction: { [weak self] in self?.performRenameLesson(lessonID: lessonID, to: newName) }
+        )
+    }
+
+    @discardableResult
+    private func performRenameLesson(lessonID: String, to newName: String) -> String? {
+        guard let lessonURL = url(forRelativePath: lessonID) else {
+            return nil
         }
 
         do {
             let newURL = try editorService.rename(lessonURL, to: newName)
-            try migratePath(kind: .lesson, oldPath: lessonID, newPath: relativePath(for: newURL))
+            let newPath = relativePath(for: newURL)
+            try migratePath(kind: .lesson, oldPath: lessonID, newPath: newPath)
             if selectedLessonPath == lessonID {
-                selectedLessonPath = relativePath(for: newURL)
+                selectedLessonPath = newPath
             }
             refresh()
+            return newPath
         } catch {
             errorMessage = Self.editorErrorMessage(for: error)
+            return nil
         }
     }
 
     /// `destinationCategoryID` is `nil` to move the lesson to the current
     /// module's direct lessons.
     public func moveLesson(lessonID: String, toCategoryID destinationCategoryID: String?) {
+        guard let module = currentModuleModel() else {
+            return
+        }
+        let sourceParentPath = lessonID.parentPath
+        let sourceCategoryID: String? = sourceParentPath == module.relativePath ? nil : sourceParentPath
+
+        guard let newPath = performMoveLesson(lessonID: lessonID, toCategoryID: destinationCategoryID) else {
+            return
+        }
+
+        registerUndoRedo(
+            actionName: "Move",
+            undoAction: { [weak self] in self?.performMoveLesson(lessonID: newPath, toCategoryID: sourceCategoryID) },
+            redoAction: { [weak self] in self?.performMoveLesson(lessonID: lessonID, toCategoryID: destinationCategoryID) }
+        )
+    }
+
+    @discardableResult
+    private func performMoveLesson(lessonID: String, toCategoryID destinationCategoryID: String?) -> String? {
         guard
             let lessonURL = url(forRelativePath: lessonID),
             let module = currentModuleModel(),
             let moduleURL = url(forRelativePath: module.relativePath)
         else {
-            return
+            return nil
         }
 
         let destinationURL = destinationCategoryID.flatMap { url(forRelativePath: $0) } ?? moduleURL
 
         do {
             let newURL = try editorService.move(lessonURL, into: destinationURL)
-            try migratePath(kind: .lesson, oldPath: lessonID, newPath: relativePath(for: newURL))
+            let newPath = relativePath(for: newURL)
+            try migratePath(kind: .lesson, oldPath: lessonID, newPath: newPath)
             if selectedLessonPath == lessonID {
-                selectedLessonPath = relativePath(for: newURL)
+                selectedLessonPath = newPath
             }
             refresh()
+            return newPath
         } catch {
             errorMessage = Self.editorErrorMessage(for: error)
+            return nil
         }
     }
 
@@ -448,12 +596,28 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         guard sourceURL.standardizedFileURL != destinationURL.standardizedFileURL else {
             return
         }
+        let sourceParentURL = sourceURL.deletingLastPathComponent()
 
+        guard let newURL = performMoveGhost(from: sourceURL, into: destinationURL) else {
+            return
+        }
+
+        registerUndoRedo(
+            actionName: "Move",
+            undoAction: { [weak self] in self?.performMoveGhost(from: newURL, into: sourceParentURL) },
+            redoAction: { [weak self] in self?.performMoveGhost(from: sourceURL, into: destinationURL) }
+        )
+    }
+
+    @discardableResult
+    private func performMoveGhost(from sourceURL: URL, into destinationURL: URL) -> URL? {
         do {
-            _ = try editorService.move(sourceURL, into: destinationURL)
+            let newURL = try editorService.move(sourceURL, into: destinationURL)
             refresh()
+            return newURL
         } catch {
             errorMessage = Self.editorErrorMessage(for: error)
+            return nil
         }
     }
 
@@ -463,11 +627,12 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
 
         do {
-            try editorService.trash(categoryURL)
+            let trashedURL = try editorService.trash(categoryURL)
             if selectedLessonPath?.hasPrefix(categoryID + "/") == true {
                 clearSelectedLesson()
             }
             refresh()
+            registerRestoreUndo(actionName: "Move to Trash", originalURL: categoryURL, trashedURL: trashedURL)
         } catch {
             errorMessage = "Could not move to Trash."
         }
@@ -479,11 +644,56 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
 
         do {
-            try editorService.trash(lessonURL)
+            let trashedURL = try editorService.trash(lessonURL)
             if selectedLessonPath == lessonID {
                 clearSelectedLesson()
             }
             refresh()
+            registerRestoreUndo(actionName: "Move to Trash", originalURL: lessonURL, trashedURL: trashedURL)
+        } catch {
+            errorMessage = "Could not move to Trash."
+        }
+    }
+
+    /// Trash/restore undo needs its own mutually-recursive pair rather than
+    /// the generic `registerUndoRedo` — `FileManager.trashItem` can rename
+    /// the item inside the Trash to dodge a collision, so each new trash
+    /// produces a *different* URL to restore from, and that has to thread
+    /// through every subsequent undo/redo step rather than being fixed at
+    /// registration time.
+    private func registerRestoreUndo(actionName: String, originalURL: URL, trashedURL: URL) {
+        undoManager.beginUndoGrouping()
+        undoManager.setActionName(actionName)
+        undoManager.registerUndo(withTarget: self) { target in
+            target.performRestore(actionName: actionName, originalURL: originalURL, trashedURL: trashedURL)
+        }
+        undoManager.endUndoGrouping()
+    }
+
+    private func performRestore(actionName: String, originalURL: URL, trashedURL: URL) {
+        do {
+            try editorService.restore(trashedURL, to: originalURL)
+            refresh()
+            registerTrashUndo(actionName: actionName, originalURL: originalURL)
+        } catch {
+            errorMessage = "Could not restore from Trash."
+        }
+    }
+
+    private func registerTrashUndo(actionName: String, originalURL: URL) {
+        undoManager.beginUndoGrouping()
+        undoManager.setActionName(actionName)
+        undoManager.registerUndo(withTarget: self) { target in
+            target.performTrash(actionName: actionName, originalURL: originalURL)
+        }
+        undoManager.endUndoGrouping()
+    }
+
+    private func performTrash(actionName: String, originalURL: URL) {
+        do {
+            let trashedURL = try editorService.trash(originalURL)
+            refresh()
+            registerRestoreUndo(actionName: actionName, originalURL: originalURL, trashedURL: trashedURL)
         } catch {
             errorMessage = "Could not move to Trash."
         }
@@ -559,7 +769,30 @@ public final class ClassroomBrowserViewModel: ObservableObject {
 
     private func performTransform(folderURL: URL, chosenMedia: URL?, chosenNotes: URL?) {
         do {
-            try editorService.transformToLesson(folderURL, chosenMedia: chosenMedia, chosenNotes: chosenNotes)
+            let result = try editorService.transformToLesson(folderURL, chosenMedia: chosenMedia, chosenNotes: chosenNotes)
+            refresh()
+            registerUndoRedo(
+                actionName: "Transform to Lesson",
+                undoAction: { [weak self] in self?.performUndoTransform(folderURL: folderURL, result: result) },
+                redoAction: { [weak self] in self?.performRedoTransform(folderURL: folderURL, chosenMedia: chosenMedia, chosenNotes: chosenNotes) }
+            )
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
+    private func performUndoTransform(folderURL: URL, result: ClassroomEditorService.TransformResult) {
+        do {
+            try editorService.undoTransformToLesson(folderURL, result: result)
+            refresh()
+        } catch {
+            errorMessage = "Could not undo the transform."
+        }
+    }
+
+    private func performRedoTransform(folderURL: URL, chosenMedia: URL?, chosenNotes: URL?) {
+        do {
+            _ = try editorService.transformToLesson(folderURL, chosenMedia: chosenMedia, chosenNotes: chosenNotes)
             refresh()
         } catch {
             errorMessage = Self.editorErrorMessage(for: error)
@@ -895,6 +1128,23 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Pushes one undoable step. `undoAction` is what runs if the user hits
+    /// Undo right now; `redoAction` is what runs if they then hit Redo.
+    /// Each time either fires, it re-registers itself with the two swapped
+    /// — that's what keeps Cmd-Z / Cmd-Shift-Z ping-ponging correctly
+    /// through Foundation's `UndoManager`, which treats whatever gets
+    /// registered *during* an undo/redo handler as the next step in the
+    /// opposite direction.
+    private func registerUndoRedo(actionName: String, undoAction: @escaping () -> Void, redoAction: @escaping () -> Void) {
+        undoManager.beginUndoGrouping()
+        undoManager.setActionName(actionName)
+        undoManager.registerUndo(withTarget: self) { target in
+            undoAction()
+            target.registerUndoRedo(actionName: actionName, undoAction: redoAction, redoAction: undoAction)
+        }
+        undoManager.endUndoGrouping()
+    }
+
     private static func editorErrorMessage(for error: Error) -> String {
         switch error as? ClassroomEditorService.EditorError {
         case .emptyName:
@@ -944,5 +1194,9 @@ private extension SidebarLesson {
 private extension String {
     var fileName: String {
         String(split(separator: "/").last ?? "")
+    }
+
+    var parentPath: String {
+        split(separator: "/").dropLast().joined(separator: "/")
     }
 }

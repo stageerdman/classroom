@@ -16,6 +16,15 @@ public struct ClassroomEditorService {
         }
     }
 
+    /// What a successful `transformToLesson` actually did to the folder —
+    /// enough for a caller to undo it precisely: move the archived files
+    /// back out of `Attachments/`, remove that folder if the transform is
+    /// what created it, and remove the `.lesson` marker.
+    public struct TransformResult: Equatable {
+        public let archivedFileNames: [String]
+        public let createdAttachmentsFolder: Bool
+    }
+
     public enum EditorError: Error, Equatable {
         case emptyName
         case invalidCharacters
@@ -54,7 +63,8 @@ public struct ClassroomEditorService {
         )
     }
 
-    public func transformToLesson(_ folderURL: URL, chosenMedia: URL? = nil, chosenNotes: URL? = nil) throws {
+    @discardableResult
+    public func transformToLesson(_ folderURL: URL, chosenMedia: URL? = nil, chosenNotes: URL? = nil) throws -> TransformResult {
         let candidates = transformCandidates(for: folderURL)
         guard !candidates.isAlreadyLesson else {
             throw EditorError.alreadyALesson
@@ -63,6 +73,9 @@ public struct ClassroomEditorService {
             throw EditorError.hasSubfolders
         }
 
+        let attachmentsDir = attachmentsDirectory(for: folderURL)
+        let attachmentsExistedBefore = fileManager.fileExists(atPath: attachmentsDir.path)
+
         try Data().write(to: folderURL.appendingPathComponent(ClassroomScanner.lessonMarkerFileName))
 
         let finalMedia = chosenMedia ?? (candidates.mediaFiles.count == 1 ? candidates.mediaFiles.first : nil)
@@ -70,9 +83,36 @@ public struct ClassroomEditorService {
         let keep = Set([finalMedia, finalNotes].compactMap { $0?.standardizedFileURL.path })
 
         let toArchive = try looseFiles(in: folderURL).filter { !keep.contains($0.standardizedFileURL.path) }
+        var archivedFileNames: [String] = []
         for file in toArchive {
-            _ = try importFile(file, into: attachmentsDirectory(for: folderURL))
+            let archivedURL = try importFile(file, into: attachmentsDir)
+            archivedFileNames.append(archivedURL.lastPathComponent)
         }
+
+        return TransformResult(
+            archivedFileNames: archivedFileNames,
+            createdAttachmentsFolder: !attachmentsExistedBefore && !archivedFileNames.isEmpty
+        )
+    }
+
+    /// Reverses a successful `transformToLesson`: moves the archived files
+    /// back out of `Attachments/`, removes that folder if the transform
+    /// created it, and removes the `.lesson` marker. Used by undo.
+    public func undoTransformToLesson(_ folderURL: URL, result: TransformResult) throws {
+        let attachmentsDir = attachmentsDirectory(for: folderURL)
+        for name in result.archivedFileNames {
+            let archivedURL = attachmentsDir.appendingPathComponent(name)
+            guard fileManager.fileExists(atPath: archivedURL.path) else {
+                continue
+            }
+            _ = try move(archivedURL, into: folderURL)
+        }
+
+        if result.createdAttachmentsFolder {
+            try? fileManager.removeItem(at: attachmentsDir)
+        }
+
+        try? fileManager.removeItem(at: folderURL.appendingPathComponent(ClassroomScanner.lessonMarkerFileName))
     }
 
     // MARK: Ghosts — everything on disk that isn't part of the recognized structure
@@ -163,8 +203,32 @@ public struct ClassroomEditorService {
         return destinationURL
     }
 
-    public func trash(_ url: URL) throws {
-        try fileManager.trashItem(at: url, resultingItemURL: nil)
+    /// Returns the item's resulting location inside the Trash, so a caller
+    /// (undo) can restore it later — macOS may rename it there to avoid a
+    /// collision with something already in the Trash.
+    @discardableResult
+    public func trash(_ url: URL) throws -> URL {
+        var resultingItemURL: NSURL?
+        try fileManager.trashItem(at: url, resultingItemURL: &resultingItemURL)
+        guard let trashedURL = resultingItemURL as URL? else {
+            throw EditorError.sourceMissing
+        }
+        return trashedURL
+    }
+
+    /// Moves an item back out of the Trash to an exact destination path —
+    /// used by undo, where the destination must match the original
+    /// location precisely rather than being auto-disambiguated like
+    /// `move(_:into:)` does.
+    public func restore(_ trashedURL: URL, to destinationURL: URL) throws {
+        guard fileManager.fileExists(atPath: trashedURL.path) else {
+            throw EditorError.sourceMissing
+        }
+        guard !fileManager.fileExists(atPath: destinationURL.path) else {
+            throw EditorError.nameCollision
+        }
+        try fileManager.createDirectory(at: destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fileManager.moveItem(at: trashedURL, to: destinationURL)
     }
 
     // MARK: Import (always a move, per the locked "Finder drag moves" decision)
