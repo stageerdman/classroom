@@ -74,12 +74,14 @@ final class ClassroomEditorServiceTests: XCTestCase {
         XCTAssertTrue(fileManager.fileExists(atPath: folder.appendingPathComponent("Attachments/A.mp4").path))
     }
 
-    func testTransformRejectedWhenFolderHasSubfoldersOrIsAlreadyALesson() throws {
-        let withSubfolder = try makeTempDirectory()
-        defer { try? fileManager.removeItem(at: withSubfolder) }
-        try fileManager.createDirectory(at: withSubfolder.appendingPathComponent("Nested"), withIntermediateDirectories: true)
+    func testTransformRejectedOnlyWhenSubfolderIsItselfARealLessonOrAlreadyALesson() throws {
+        let withNestedLesson = try makeTempDirectory()
+        defer { try? fileManager.removeItem(at: withNestedLesson) }
+        let nested = withNestedLesson.appendingPathComponent("Nested")
+        try fileManager.createDirectory(at: nested, withIntermediateDirectories: true)
+        try write(nested, ClassroomScanner.lessonMarkerFileName)
 
-        XCTAssertThrowsError(try service.transformToLesson(withSubfolder)) { error in
+        XCTAssertThrowsError(try service.transformToLesson(withNestedLesson)) { error in
             XCTAssertEqual(error as? ClassroomEditorService.EditorError, .hasSubfolders)
         }
 
@@ -90,6 +92,33 @@ final class ClassroomEditorServiceTests: XCTestCase {
         XCTAssertThrowsError(try service.transformToLesson(alreadyLesson)) { error in
             XCTAssertEqual(error as? ClassroomEditorService.EditorError, .alreadyALesson)
         }
+    }
+
+    func testTransformAllowedWithAnUnmarkedOrAttachmentsSubfolder() throws {
+        // A folder with a plain, unmarked subfolder (not a real lesson) is a
+        // valid transform target — the subfolder is left alone and just
+        // surfaces as a ghost inside the new lesson afterward.
+        let withPlainSubfolder = try makeTempDirectory()
+        defer { try? fileManager.removeItem(at: withPlainSubfolder) }
+        try write(withPlainSubfolder, "Intro.md")
+        try fileManager.createDirectory(at: withPlainSubfolder.appendingPathComponent("Extras"), withIntermediateDirectories: true)
+
+        XCTAssertNoThrow(try service.transformToLesson(withPlainSubfolder))
+        XCTAssertTrue(fileManager.fileExists(atPath: withPlainSubfolder.appendingPathComponent(ClassroomScanner.lessonMarkerFileName).path))
+
+        // An existing "Attachments" folder — e.g. pre-organized by hand in
+        // Finder before the folder was ever a recognized lesson — is also a
+        // valid transform target and is left untouched (it's already named
+        // correctly for the scanner to pick up).
+        let withAttachments = try makeTempDirectory()
+        defer { try? fileManager.removeItem(at: withAttachments) }
+        try write(withAttachments, "Intro.md")
+        let attachments = withAttachments.appendingPathComponent("Attachments")
+        try fileManager.createDirectory(at: attachments, withIntermediateDirectories: true)
+        try write(attachments, "Handout.pdf")
+
+        XCTAssertNoThrow(try service.transformToLesson(withAttachments))
+        XCTAssertTrue(fileManager.fileExists(atPath: attachments.appendingPathComponent("Handout.pdf").path))
     }
 
     // MARK: Create / rename / move

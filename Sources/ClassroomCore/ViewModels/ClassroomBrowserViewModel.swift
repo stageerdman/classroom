@@ -427,6 +427,36 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
     }
 
+    /// Moves a ghost file or folder (identified by its absolute path, since
+    /// it has no relative-path identity in the recognized structure) into
+    /// another folder — either a recognized category/module (via
+    /// `destinationCategoryID`, `nil` meaning the current module's root) or
+    /// another ghost folder (via `destinationFolderURL`).
+    public func moveGhost(atAbsolutePath path: String, toCategoryID destinationCategoryID: String?) {
+        guard
+            let module = currentModuleModel(),
+            let moduleURL = url(forRelativePath: module.relativePath)
+        else {
+            return
+        }
+        let destinationURL = destinationCategoryID.flatMap { url(forRelativePath: $0) } ?? moduleURL
+        moveGhost(atAbsolutePath: path, intoFolderURL: destinationURL)
+    }
+
+    public func moveGhost(atAbsolutePath path: String, intoFolderURL destinationURL: URL) {
+        let sourceURL = URL(fileURLWithPath: path)
+        guard sourceURL.standardizedFileURL != destinationURL.standardizedFileURL else {
+            return
+        }
+
+        do {
+            _ = try editorService.move(sourceURL, into: destinationURL)
+            refresh()
+        } catch {
+            errorMessage = Self.editorErrorMessage(for: error)
+        }
+    }
+
     public func trashCategory(categoryID: String) {
         guard let categoryURL = url(forRelativePath: categoryID) else {
             return
@@ -466,6 +496,14 @@ public final class ClassroomBrowserViewModel: ObservableObject {
             return []
         }
         return editorService.ghostEntries(in: folderURL, excludingNames: knownNames)
+    }
+
+    /// Ghosts inside a ghost folder — since a ghost folder has no
+    /// relative-path identity in the recognized structure, everything
+    /// directly inside it is a ghost too, recursively, until the user
+    /// transforms something into a real lesson.
+    public func ghostEntries(inFolderURL folderURL: URL) -> [GhostEntry] {
+        editorService.ghostEntries(in: folderURL, excludingNames: [])
     }
 
     public func ghostEntriesForSelectedLesson() -> [GhostEntry] {
@@ -870,7 +908,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         case .alreadyALesson:
             return "This folder is already a lesson."
         case .hasSubfolders:
-            return "This folder contains subfolders, so it can't be transformed directly."
+            return "This folder already contains a lesson, so it can't be transformed directly."
         case nil:
             return "Something went wrong."
         }

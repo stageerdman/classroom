@@ -54,7 +54,7 @@ struct ClassroomSidebarView: View {
                         }
 
                         ForEach(moduleGhosts) { ghost in
-                            ghostRow(ghost)
+                            GhostEntryRow(viewModel: viewModel, ghost: ghost)
                         }
                     }
 
@@ -87,7 +87,7 @@ struct ClassroomSidebarView: View {
                                 }
 
                                 ForEach(categoryGhosts(category)) { ghost in
-                                    ghostRow(ghost)
+                                    GhostEntryRow(viewModel: viewModel, ghost: ghost)
                                 }
                             }
                         } label: {
@@ -328,28 +328,6 @@ struct ClassroomSidebarView: View {
         return viewModel.ghostEntries(inRelativePath: category.id, excludingNames: knownNames)
     }
 
-    private func ghostRow(_ ghost: GhostEntry) -> some View {
-        HStack {
-            Image(systemName: ghost.isDirectory ? "folder" : "doc")
-                .foregroundStyle(.tertiary)
-                .frame(width: 18, alignment: .center)
-            Text(ghost.name)
-                .italic()
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-            Spacer()
-        }
-        .opacity(0.6)
-        .help("Not part of the lesson/category structure yet")
-        .contextMenu {
-            if ghost.isDirectory {
-                Button("Transform to Lesson") {
-                    viewModel.beginTransform(folderURL: ghost.url)
-                }
-            }
-        }
-    }
-
     private func lessonIcon(isCompleted: Bool) -> some View {
         Image(systemName: isCompleted ? "checkmark.circle.fill" : "play.rectangle")
             .symbolRenderingMode(.monochrome)
@@ -393,10 +371,15 @@ struct ClassroomSidebarView: View {
     }
 
     private func handleReparentDrop(_ ids: [String], categoryID: String?) -> Bool {
-        guard let lessonID = ids.first else {
+        guard let id = ids.first else {
             return false
         }
-        viewModel.moveLesson(lessonID: lessonID, toCategoryID: categoryID)
+
+        if let ghostPath = GhostEntryRow.strippedGhostPath(id) {
+            viewModel.moveGhost(atAbsolutePath: ghostPath, toCategoryID: categoryID)
+        } else {
+            viewModel.moveLesson(lessonID: id, toCategoryID: categoryID)
+        }
         return true
     }
 }

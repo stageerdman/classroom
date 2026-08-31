@@ -709,6 +709,35 @@ await MainActor.run {
     expect(editingVM.errorMessage == nil, "Transforming an eligible ghost folder (no subfolders, no media/notes) should succeed without an error")
 }
 
+// MARK: - Ghost folders should be browsable (recursively) and their contents movable
+
+try fileManager.createDirectory(
+    at: editingVMRoot.appendingPathComponent("Module A Renamed/New Category/Nested Ghost Folder", isDirectory: true),
+    withIntermediateDirectories: true
+)
+try createFile(at: editingVMRoot, "Module A Renamed/New Category/Nested Ghost Folder/Inner.txt")
+
+await MainActor.run {
+    editingVM.refresh()
+
+    let nestedGhostFolderURL = editingVMRoot.appendingPathComponent("Module A Renamed/New Category/Nested Ghost Folder", isDirectory: true)
+    let innerGhosts = editingVM.ghostEntries(inFolderURL: nestedGhostFolderURL)
+    expect(innerGhosts.map(\.name) == ["Inner.txt"], "Opening a ghost folder should surface what's inside it, recursively")
+
+    // Moving a ghost file out of one folder and into another (e.g. via drag)
+    // should work as a plain filesystem move, no different from a lesson reparent.
+    let innerFileURL = nestedGhostFolderURL.appendingPathComponent("Inner.txt")
+    editingVM.moveGhost(atAbsolutePath: innerFileURL.path, toCategoryID: "Module A Renamed/New Category")
+    expect(editingVM.errorMessage == nil, "Moving a ghost file to a recognized category should succeed")
+
+    let movedFileExists = fileManager.fileExists(
+        atPath: editingVMRoot.appendingPathComponent("Module A Renamed/New Category/Inner.txt").path
+    )
+    expect(movedFileExists, "The moved ghost file should now live directly under the destination category")
+    let oldFileGone = !fileManager.fileExists(atPath: innerFileURL.path)
+    expect(oldFileGone, "The ghost file should no longer exist at its old location after the move")
+}
+
 let ghostTransformScan = ClassroomScanner().scan(rootURL: editingVMRoot)
 let ghostTransformedLesson = ghostTransformScan.modules.first { $0.name == "Module A Renamed" }?
     .categories.first { $0.name == "New Category" }?

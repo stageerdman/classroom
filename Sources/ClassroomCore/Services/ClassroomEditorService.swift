@@ -39,11 +39,18 @@ public struct ClassroomEditorService {
         let media = sortedByName(files.filter { ClassroomScanner.defaultMediaExtensions.contains($0.pathExtension.lowercased()) })
         let notes = sortedByName(files.filter { $0.pathExtension.lowercased() == "md" })
 
+        // Only a subfolder that's itself a real lesson blocks the transform —
+        // that's the signal this folder is genuinely functioning as a
+        // Category. An "Attachments"/"Removed" folder or any other unmarked
+        // subfolder is left alone (or, for Attachments/Removed, picked up by
+        // the scanner as-is) and simply surfaces as a ghost afterward.
+        let blockingSubfolders = directories.filter(isLessonFolder)
+
         return TransformCandidates(
             mediaFiles: media,
             notesFiles: notes,
             isAlreadyLesson: isLessonFolder(folderURL),
-            hasSubfolders: !directories.isEmpty
+            hasSubfolders: !blockingSubfolders.isEmpty
         )
     }
 

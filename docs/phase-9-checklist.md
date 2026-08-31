@@ -1,14 +1,16 @@
 # Phase 9 Checklist — Module Editing
 
-Tracks the `2026-08-30 MODULE-EDITOR` update: see
-`updates/2026-08-30 MODULE-EDITOR - CLOSED/update.md` for the full
-rationale, including why the first version of this (a separate two-pane
-editor screen) was scrapped in favor of editing in place. This UI was
-built without any way to drive a macOS GUI in the build environment —
-automated coverage exercises every underlying operation (transform,
-create, rename, move, import, attachment lifecycle, metadata migration)
-against a real filesystem, but the drag-and-drop interactions themselves
-need a real run-through before trusting them.
+Tracks the `2026-08-30 MODULE-EDITOR` update and its
+`2026-08-31 MODULE-EDITOR-GHOST-BROWSING` follow-up: see those updates'
+`update.md` for full rationale, including why the first version of this (a
+separate two-pane editor screen) was scrapped in favor of editing in
+place, and why "Transform to Lesson" and ghost-folder browsing were
+revised after real-world testing. This UI was built without any way to
+drive a macOS GUI in the build environment — automated coverage exercises
+every underlying operation (transform, create, rename, move, import,
+attachment lifecycle, metadata migration) against a real filesystem, but
+the drag-and-drop interactions themselves need a real run-through before
+trusting them.
 
 ## Scope
 
@@ -35,7 +37,15 @@ need a real run-through before trusting them.
   lesson folder — renders as a dimmed, italic row alongside the real ones,
   at module, category, and lesson level respectively. A ghost folder
   inside a category can be transformed into a lesson from its context
-  menu.
+  menu. Ghost folders expand (disclosure triangle) to show their own
+  contents recursively, however deep — nothing on disk is a dead end. A
+  ghost file or folder can be dragged into another category or ghost
+  folder to move it on disk, the same drag mechanism used for lessons.
+- **Transform to Lesson** only rejects a folder if one of its subfolders is
+  itself a real lesson (i.e. the folder is genuinely functioning as a
+  Category). A folder with an `Attachments` folder, a `Removed` folder, or
+  any other unmarked subfolder is a valid transform target — those
+  subfolders are left alone and surface as ghosts inside the new lesson.
 
 ## Automated Verification
 
@@ -94,6 +104,27 @@ need a real run-through before trusting them.
   category (not just a warning), and that its context menu offers
   **Transform to Lesson**; use it and confirm the folder becomes a real,
   selectable lesson.
+- Put a file inside that unmarked subfolder (before transforming it);
+  confirm the ghost folder row has a disclosure triangle, and clicking it
+  reveals the file as a nested ghost row. Nest another unmarked folder
+  inside that one with its own file and confirm it opens too, arbitrarily
+  deep.
+- Drag a ghost file out of a nested ghost folder and drop it onto a
+  category row (or another ghost folder); confirm it physically moves on
+  disk to the destination and disappears from its old location.
+- Create a folder with just an `.md` file and an already-existing
+  `Attachments` subfolder (containing a random file) in Finder; confirm
+  right-click → **Transform to Lesson** succeeds (does *not* say the
+  folder contains subfolders) and the `Attachments` folder's contents are
+  still there afterward, listed as the lesson's attachments.
+- Create a folder with a loose file and one *other* unmarked, non-lesson
+  subfolder (not named Attachments/Removed); confirm **Transform to
+  Lesson** still succeeds and that subfolder now appears as a ghost inside
+  the new lesson's detail pane.
+- Create a folder that has a real nested lesson inside it (a subfolder
+  with the hidden `.lesson` marker); confirm **Transform to Lesson** on
+  the *outer* folder is still rejected — this is the one case that should
+  still block, since the folder is genuinely a Category.
 - Select a lesson with an extra, unrecognized file sitting in its folder
   (e.g. a second video that lost the disambiguation, or a stray text
   file); confirm it appears under "Other Files In This Lesson" in the
