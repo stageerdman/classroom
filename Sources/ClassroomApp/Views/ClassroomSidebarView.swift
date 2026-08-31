@@ -37,8 +37,7 @@ struct ClassroomSidebarView: View {
                     moduleProgressHeader
 
                     ForEach(module.directLessons) { lesson in
-                        lessonRow(lesson)
-                            .contextMenu { lessonContextMenu(lesson) }
+                        lessonSidebarRow(lesson)
                     }
                     .onMove { source, destination in
                         viewModel.moveDirectLessons(moduleID: module.id, from: source, to: destination)
@@ -62,8 +61,7 @@ struct ClassroomSidebarView: View {
                     ForEach(module.categories) { category in
                         DisclosureGroup {
                             ForEach(category.lessons) { lesson in
-                                lessonRow(lesson)
-                                    .contextMenu { lessonContextMenu(lesson) }
+                                lessonSidebarRow(lesson)
                             }
                             .onMove { source, destination in
                                 viewModel.moveCategoryLessons(categoryID: category.id, from: source, to: destination)
@@ -220,6 +218,34 @@ struct ClassroomSidebarView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    /// While editing, a lesson row expands (disclosure triangle) to browse
+    /// what's inside its folder — same mechanism as a ghost folder, so
+    /// opening a lesson to operate on its files doesn't require a separate
+    /// "Other Files" panel elsewhere. `contextMenu` lives on the row itself
+    /// (the label), not the `DisclosureGroup` — otherwise a right-click on
+    /// a nested ghost row gets misattributed to the lesson, the same bug
+    /// that once broke Transform to Lesson on category rows.
+    @ViewBuilder
+    private func lessonSidebarRow(_ lesson: SidebarLesson) -> some View {
+        if viewModel.isEditingModule {
+            DisclosureGroup {
+                ForEach(lessonGhosts(lesson)) { ghost in
+                    GhostEntryRow(viewModel: viewModel, ghost: ghost, allowsTransform: false, onOpenFile: onOpenGhostFile)
+                }
+            } label: {
+                lessonRow(lesson)
+                    .contextMenu { lessonContextMenu(lesson) }
+            }
+        } else {
+            lessonRow(lesson)
+                .contextMenu { lessonContextMenu(lesson) }
+        }
+    }
+
+    private func lessonGhosts(_ lesson: SidebarLesson) -> [GhostEntry] {
+        viewModel.ghostEntries(forLessonID: lesson.id)
     }
 
     @ViewBuilder

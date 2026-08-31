@@ -124,13 +124,6 @@ struct ClassroomBrowserView: View {
                     if !selectedLesson.attachmentURLs.isEmpty || viewModel.isEditingModule {
                         attachmentsSection(selectedLesson.attachmentURLs)
                     }
-
-                    if viewModel.isEditingModule {
-                        let lessonGhosts = viewModel.ghostEntriesForSelectedLesson()
-                        if !lessonGhosts.isEmpty {
-                            lessonGhostsSection(lessonGhosts)
-                        }
-                    }
                 } else {
                     Text("Select a lesson from the sidebar.")
                         .foregroundStyle(.secondary)
@@ -313,21 +306,6 @@ struct ClassroomBrowserView: View {
                         viewModel.addAttachmentToSelectedLesson(fileURL: URL(fileURLWithPath: path))
                         return true
                     }
-            }
-        }
-    }
-
-    private func lessonGhostsSection(_ ghosts: [GhostEntry]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Other Files In This Lesson")
-                .font(.headline)
-
-            Text("Not the chosen media/notes, and not in Attachments — still on disk, not part of the lesson yet. Folders open to browse what's inside; click a file to open it (Markdown opens in-app), or drag it into a category/attachments/another folder to move it.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            ForEach(ghosts) { ghost in
-                GhostEntryRow(viewModel: viewModel, ghost: ghost, allowsTransform: false, onOpenFile: openFile)
             }
         }
     }

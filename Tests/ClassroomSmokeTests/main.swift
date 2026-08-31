@@ -711,9 +711,14 @@ await MainActor.run {
     guard let renamedLesson = newCategory.lessons.first(where: { $0.title == "Renamed Lesson" }) else {
         fatalError("Expected Renamed Lesson for ghost entry tests")
     }
+    // Available by ID without selecting the lesson first — a sidebar row
+    // needs to expand and show this without the user having clicked into
+    // the lesson at all.
+    expect(editingVM.selectedLesson?.relativePath != renamedLesson.relativePath, "Lesson should not be selected yet, to prove the lookup below doesn't depend on selection")
+    let lessonGhostNames = Set(editingVM.ghostEntries(forLessonID: renamedLesson.relativePath).map(\.name))
+    expect(lessonGhostNames.contains("Unexpected.txt"), "An unexpected loose file inside a lesson folder should surface as a ghost, without requiring the lesson to be selected")
+
     editingVM.selectLesson(renamedLesson)
-    let lessonGhostNames = Set(editingVM.ghostEntriesForSelectedLesson().map(\.name))
-    expect(lessonGhostNames.contains("Unexpected.txt"), "An unexpected loose file inside a lesson folder should surface as a ghost")
 
     // A ghost folder nested inside a category is a valid Transform to Lesson target.
     let ghostFolderURL = editingVMRoot.appendingPathComponent("Module A Renamed/New Category/Unmarked Nested Folder", isDirectory: true)

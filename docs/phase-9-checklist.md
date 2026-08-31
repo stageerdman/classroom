@@ -2,8 +2,9 @@
 
 Tracks the `2026-08-30 MODULE-EDITOR` update and its
 `2026-08-31 MODULE-EDITOR-GHOST-BROWSING`,
-`2026-08-31 MODULE-EDITOR-UNDO-REDO`, and
-`2026-08-31 LESSON-FILES-MEDIA-MARKDOWN` follow-ups: see those updates'
+`2026-08-31 MODULE-EDITOR-UNDO-REDO`,
+`2026-08-31 LESSON-FILES-MEDIA-MARKDOWN`, and
+`2026-08-31 LESSON-SIDEBAR-EXPANSION` follow-ups: see those updates'
 `update.md` for full rationale, including why the first version of this (a
 separate two-pane editor screen) was scrapped in favor of editing in
 place, why "Transform to Lesson" and ghost-folder browsing were revised
@@ -41,10 +42,16 @@ themselves need a real run-through before trusting them.
   lesson folder — renders as a dimmed, italic row alongside the real ones,
   at module, category, and lesson level respectively. A ghost folder
   inside a category can be transformed into a lesson from its context
-  menu. Ghost folders expand (disclosure triangle) to show their own
-  contents recursively, however deep — nothing on disk is a dead end. A
-  ghost file or folder can be dragged into another category or ghost
-  folder to move it on disk, the same drag mechanism used for lessons.
+  menu (not offered on ghosts found *inside* a lesson — nesting a lesson
+  inside a lesson isn't a real concept here). Ghost folders expand
+  (disclosure triangle) to show their own contents recursively, however
+  deep — nothing on disk is a dead end. A ghost file or folder can be
+  dragged into another category, another ghost folder, or a lesson's
+  Attachments drop zone to move it on disk, the same drag mechanism used
+  for lessons. **Every lesson row itself also expands** (disclosure
+  triangle, while editing) to show its own ghosts directly in the
+  sidebar — opening a lesson to operate on its stray files doesn't need a
+  separate panel or even selecting it first.
 - **Transform to Lesson** only rejects a folder if one of its subfolders is
   itself a real lesson (i.e. the folder is genuinely functioning as a
   Category). A folder with an `Attachments` folder, a `Removed` folder, or
@@ -171,13 +178,18 @@ themselves need a real run-through before trusting them.
 - Make several edits in a row (rename, then create, then move), and hit
   undo multiple times: confirm each undo reverts exactly one step, in
   reverse order, rather than jumping back further or doing nothing.
-- Select a lesson with a stray subfolder inside it (not Attachments/
-  Removed); confirm it appears under "Other Files In This Lesson" with a
-  disclosure triangle, opens to show its contents, and does **not** offer
-  "Transform to Lesson" in its context menu (a folder inside a lesson
-  can't become a nested lesson).
-- Drag a stray file from inside a lesson's ghost section onto the
-  Attachments drop zone; confirm it's added as a real attachment.
+- While editing, every lesson row (direct or inside a category) has a
+  disclosure triangle, same as a ghost folder — there is no separate
+  "Other Files" panel anywhere. Put a stray file/subfolder inside a
+  lesson's folder (not Attachments/Removed); expand that lesson row in
+  the sidebar and confirm it shows up there, recursively browsable if
+  it's a folder, and does **not** offer "Transform to Lesson" in its
+  context menu (a folder inside a lesson can't become a nested lesson).
+  Confirm clicking the lesson row itself (not the triangle) still selects
+  it as before — expanding and selecting are independent.
+- Drag a stray file out from inside an expanded lesson row onto the
+  Attachments drop zone in the detail pane; confirm it's added as a real
+  attachment.
 - Click a Markdown ghost/attachment file (not the lesson's own notes):
   confirm it opens in a sheet with the same live-styled editor as notes,
   edits save (wait ~1s or hit Done), and reopening shows the saved text.
