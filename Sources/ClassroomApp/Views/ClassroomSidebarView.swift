@@ -244,8 +244,13 @@ struct ClassroomSidebarView: View {
         }
     }
 
+    /// Everything inside the lesson's folder — media, notes, Attachments/,
+    /// all of it — same as opening a ghost folder shows literally
+    /// everything inside it. Unlike the module/category ghost listings,
+    /// nothing is excluded here: this *is* the "open the lesson" view, not
+    /// a "what's left over" view.
     private func lessonGhosts(_ lesson: SidebarLesson) -> [GhostEntry] {
-        viewModel.ghostEntries(forLessonID: lesson.id)
+        viewModel.ghostEntries(inRelativePath: lesson.relativePath, excludingNames: [])
     }
 
     @ViewBuilder

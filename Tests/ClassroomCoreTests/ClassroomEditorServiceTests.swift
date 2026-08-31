@@ -23,20 +23,23 @@ final class ClassroomEditorServiceTests: XCTestCase {
         XCTAssertEqual(ghosts.first { $0.name == "Unmarked Folder" }?.isDirectory, true)
     }
 
-    func testLessonGhostEntriesExcludesMediaNotesAttachmentsAndRemoved() throws {
+    func testGhostEntriesWithNoExclusionsShowsEverythingInsideALessonFolder() throws {
+        // Opening a lesson row (the sidebar's "browse this lesson's files"
+        // affordance) uses `ghostEntries(in:excludingNames: [])` directly —
+        // nothing is filtered out, unlike a category listing, which
+        // excludes its recognized lessons.
         let lesson = try makeTempDirectory()
         defer { try? fileManager.removeItem(at: lesson) }
 
-        let media = try write(lesson, "Video.mp4")
-        let notes = try write(lesson, "Notes.md")
-        try write(lesson, "Extra.mp4")
+        try write(lesson, "Video.mp4")
+        try write(lesson, "Notes.md")
         try fileManager.createDirectory(at: lesson.appendingPathComponent("Attachments"), withIntermediateDirectories: true)
         try fileManager.createDirectory(at: lesson.appendingPathComponent("Removed"), withIntermediateDirectories: true)
         try fileManager.createDirectory(at: lesson.appendingPathComponent("Unexpected Folder"), withIntermediateDirectories: true)
 
-        let ghosts = service.lessonGhostEntries(lessonFolderURL: lesson, mediaURL: media, notesURL: notes)
+        let ghosts = service.ghostEntries(in: lesson, excludingNames: [])
 
-        XCTAssertEqual(Set(ghosts.map(\.name)), ["Extra.mp4", "Unexpected Folder"])
+        XCTAssertEqual(Set(ghosts.map(\.name)), ["Video.mp4", "Notes.md", "Attachments", "Removed", "Unexpected Folder"])
     }
 
     // MARK: Transform

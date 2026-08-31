@@ -711,12 +711,16 @@ await MainActor.run {
     guard let renamedLesson = newCategory.lessons.first(where: { $0.title == "Renamed Lesson" }) else {
         fatalError("Expected Renamed Lesson for ghost entry tests")
     }
-    // Available by ID without selecting the lesson first — a sidebar row
-    // needs to expand and show this without the user having clicked into
-    // the lesson at all.
+    // Available by relative path without selecting the lesson first — a
+    // sidebar row needs to expand and show this without the user having
+    // clicked into the lesson at all. Nothing is excluded here (unlike
+    // module/category ghost listings) — opening a lesson row shows
+    // literally everything inside it, including its own recognized media,
+    // the same way opening a ghost folder does.
     expect(editingVM.selectedLesson?.relativePath != renamedLesson.relativePath, "Lesson should not be selected yet, to prove the lookup below doesn't depend on selection")
-    let lessonGhostNames = Set(editingVM.ghostEntries(forLessonID: renamedLesson.relativePath).map(\.name))
-    expect(lessonGhostNames.contains("Unexpected.txt"), "An unexpected loose file inside a lesson folder should surface as a ghost, without requiring the lesson to be selected")
+    let lessonContents = Set(editingVM.ghostEntries(inRelativePath: renamedLesson.relativePath, excludingNames: []).map(\.name))
+    expect(lessonContents.contains("Unexpected.txt"), "An unexpected loose file inside a lesson folder should show up when the lesson row is opened")
+    expect(lessonContents.contains("Video.mp4"), "The lesson's own recognized media file should show up too when the lesson row is opened — nothing is hidden")
 
     editingVM.selectLesson(renamedLesson)
 

@@ -716,21 +716,6 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         editorService.ghostEntries(in: folderURL, excludingNames: [])
     }
 
-    /// Ghosts inside any lesson (not just the selected one) — lets a
-    /// lesson row in the sidebar expand and browse its own contents the
-    /// same way a ghost folder does, without requiring the lesson to be
-    /// selected first.
-    public func ghostEntries(forLessonID lessonID: String) -> [GhostEntry] {
-        guard let classroom, let lesson = lesson(for: lessonID, in: classroom) else {
-            return []
-        }
-        return editorService.lessonGhostEntries(
-            lessonFolderURL: lesson.folderURL,
-            mediaURL: lesson.mediaURL,
-            notesURL: lesson.notesURL
-        )
-    }
-
     // MARK: Editing — transform to lesson
 
     public func beginTransform(categoryID: String) {

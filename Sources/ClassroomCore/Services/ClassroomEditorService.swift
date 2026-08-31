@@ -135,35 +135,6 @@ public struct ClassroomEditorService {
         }
     }
 
-    /// Ghosts for inside a Lesson folder specifically — anything that isn't
-    /// its chosen media file, its chosen notes file, or the `Attachments`/
-    /// `Removed` folders (matched case-insensitively, same as the scanner).
-    public func lessonGhostEntries(lessonFolderURL: URL, mediaURL: URL?, notesURL: URL?) -> [GhostEntry] {
-        let children = (try? visibleChildren(of: lessonFolderURL)) ?? []
-        let reservedPaths = Set([mediaURL, notesURL].compactMap { $0?.standardizedFileURL.path })
-
-        let ghosts = children.filter { url in
-            if reservedPaths.contains(url.standardizedFileURL.path) {
-                return false
-            }
-            if FileSystemVisibility.isDirectory(url) {
-                let lowerName = url.lastPathComponent.lowercased()
-                if lowerName == ClassroomScanner.attachmentsFolderName || lowerName == ClassroomScanner.removedFolderName {
-                    return false
-                }
-            }
-            return true
-        }
-
-        return sortedByName(ghosts).map { url in
-            GhostEntry(
-                id: url.path,
-                name: url.lastPathComponent,
-                url: url,
-                isDirectory: FileSystemVisibility.isDirectory(url)
-            )
-        }
-    }
 
     // MARK: Create
 
