@@ -1,8 +1,13 @@
 import Foundation
 
 public struct MetadataStore {
-    public static let metadataDirectoryName = ".local-classroom"
+    public static let metadataDirectoryName = ".classroom"
     public static let metadataFileName = "classroom.json"
+
+    /// Metadata directory name used before the project was renamed from
+    /// "Local Classroom" to "Classroom". Migrated in place on first access
+    /// so classrooms created with the old app version keep their data.
+    private static let legacyMetadataDirectoryName = ".local-classroom"
 
     private let fileManager: FileManager
     private let calendar: Calendar
@@ -41,6 +46,8 @@ public struct MetadataStore {
     }
 
     public func load(rootURL: URL) throws -> ClassroomMetadata {
+        migrateLegacyMetadataDirectoryIfNeeded(rootURL: rootURL)
+
         let data = try Data(contentsOf: metadataURL(rootURL: rootURL))
         let metadata = try decoder.decode(ClassroomMetadata.self, from: data)
 
@@ -104,6 +111,8 @@ public struct MetadataStore {
     }
 
     private func loadOrCreateMetadata(rootURL: URL, now: Date, warnings: inout [ClassroomWarning]) -> ClassroomMetadata {
+        migrateLegacyMetadataDirectoryIfNeeded(rootURL: rootURL)
+
         let url = metadataURL(rootURL: rootURL)
 
         guard fileManager.fileExists(atPath: url.path) else {
@@ -236,6 +245,16 @@ public struct MetadataStore {
         }
 
         return classroom
+    }
+
+    private func migrateLegacyMetadataDirectoryIfNeeded(rootURL: URL) {
+        let currentURL = metadataDirectoryURL(rootURL: rootURL)
+        guard !fileManager.fileExists(atPath: currentURL.path) else { return }
+
+        let legacyURL = rootURL.appendingPathComponent(Self.legacyMetadataDirectoryName, isDirectory: true)
+        guard fileManager.fileExists(atPath: legacyURL.path) else { return }
+
+        try? fileManager.moveItem(at: legacyURL, to: currentURL)
     }
 
     private func backupMalformedMetadata(at url: URL, now: Date) {

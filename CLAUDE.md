@@ -1,7 +1,7 @@
 # Working in this repo
 
 Classroom is a local-first macOS SwiftUI app (see
-`local_classroom_codex_spec.md` for the product spec). This file defines how
+`classroom_spec.md` for the product spec). This file defines how
 we work in this codebase — read it before making changes.
 
 ## Main principles

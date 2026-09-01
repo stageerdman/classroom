@@ -228,7 +228,7 @@ let initialMetadataScan = ClassroomScanner().scan(rootURL: metadataRoot)
 let initialMetadataResult = metadataStore.loadMergeAndSave(classroom: initialMetadataScan, now: firstMetadataDate)
 expect(
     fileManager.fileExists(atPath: metadataStore.metadataURL(rootURL: metadataRoot).path),
-    "Missing metadata should create .local-classroom/classroom.json"
+    "Missing metadata should create .classroom/classroom.json"
 )
 expect(initialMetadataResult.metadata.schemaVersion == ClassroomMetadata.currentSchemaVersion, "Metadata should use the current schema version")
 expect(initialMetadataResult.metadata.lessonState["Module/Alpha"] == LessonState(), "Unknown scanned lessons should receive default state")
@@ -281,6 +281,21 @@ expect(malformedResult.warnings.contains { $0.kind == .malformedMetadata }, "Mal
 expect(malformedBackups.count == 1, "Malformed metadata should be backed up")
 let recoveredMalformedMetadata = try metadataStore.load(rootURL: malformedRoot)
 expect(recoveredMalformedMetadata.lessonState["Module/Lesson"] != nil, "Classroom should remain usable after malformed metadata recovery")
+
+let legacyRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
+try makeLessonFolder(at: legacyRoot, "Module/Lesson")
+let legacyMetadataDirectory = legacyRoot.appendingPathComponent(".local-classroom", isDirectory: true)
+try fileManager.createDirectory(at: legacyMetadataDirectory, withIntermediateDirectories: true)
+var legacyMetadata = ClassroomMetadata()
+legacyMetadata.lessonState["Module/Lesson"] = LessonState(playbackPositionSeconds: 7, completed: false, lastOpenedAt: nil)
+let legacyEncoder = JSONEncoder()
+legacyEncoder.dateEncodingStrategy = .iso8601
+try legacyEncoder.encode(legacyMetadata).write(to: legacyMetadataDirectory.appendingPathComponent(MetadataStore.metadataFileName))
+
+let migratedResult = metadataStore.loadMergeAndSave(classroom: ClassroomScanner().scan(rootURL: legacyRoot), now: firstMetadataDate)
+expect(migratedResult.metadata.lessonState["Module/Lesson"]?.playbackPositionSeconds == 7, "Legacy .local-classroom metadata should be migrated and preserved")
+expect(!fileManager.fileExists(atPath: legacyMetadataDirectory.path), "Legacy .local-classroom directory should no longer exist after migration")
+expect(fileManager.fileExists(atPath: metadataStore.metadataURL(rootURL: legacyRoot).path), "Migrated metadata should live under .classroom")
 
 // MARK: - Playback
 

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Sources/ClassroomApp/Resources/classroom-icon.png" alt="Classroom logo" width="96" height="96">
+</p>
+
 # Classroom
 
 A local-first macOS app that turns any folder into a browsable classroom —
@@ -12,7 +16,7 @@ no separate editor screen. While editing you can rename the module,
 categories, and lessons in place; create new ones; drag a lesson to
 reorder or reparent it across categories; transform a plain folder into a
 lesson; Trash a category or lesson; and drop files onto a selected lesson's
-media, notes, or attachments. See `local_classroom_codex_spec.md` for the
+media, notes, or attachments. See `classroom_spec.md` for the
 original product and engineering spec,
 `updates/2026-08-30 GALLERY-LESSON-FOLDERS - CLOSED/update.md` for the
 gallery/lesson-folder update, and

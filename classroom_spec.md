@@ -1,4 +1,4 @@
-# Local Classroom for macOS — Product and Engineering Specification
+# Classroom for macOS — Product and Engineering Specification
 
 ## 1. Product Summary
 
@@ -104,7 +104,7 @@ Store classroom-specific metadata inside the classroom root:
 
 ```text
 Classroom Root/
-└── .local-classroom/
+└── .classroom/
     └── classroom.json
 ```
 
@@ -803,7 +803,7 @@ Exit criterion:
 
 Implement:
 
-- `.local-classroom/classroom.json`;
+- `.classroom/classroom.json`;
 - schema version;
 - atomic save;
 - default metadata creation;

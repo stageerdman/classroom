@@ -2,7 +2,7 @@
 
 ## Scope
 
-- `.local-classroom/classroom.json`
+- `.classroom/classroom.json`
 - Schema version 1 metadata model
 - Atomic metadata save
 - Default metadata creation
@@ -21,7 +21,7 @@
 
 - Run `swift run Classroom`.
 - Open a classroom folder.
-- Inspect `.local-classroom/classroom.json`.
+- Inspect `.classroom/classroom.json`.
 - Manually corrupt the JSON.
 - Reopen or refresh the classroom.
 - Verify a malformed backup file exists and the classroom remains usable.
