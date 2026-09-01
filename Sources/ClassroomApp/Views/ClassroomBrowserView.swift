@@ -5,6 +5,8 @@ import SwiftUI
 struct ClassroomBrowserView: View {
     @StateObject private var viewModel = ClassroomBrowserViewModel()
     @StateObject private var playbackService = PlaybackService()
+    @StateObject private var thumbnailProvider = ScrubThumbnailProvider()
+    @State private var fullScreenController = FullScreenPlayerWindowController()
     @State private var selectedSidebarID: String?
     @State private var noteAutosaveTask: Task<Void, Never>?
     @State private var noteEditorHeight: CGFloat = 180
@@ -114,7 +116,6 @@ struct ClassroomBrowserView: View {
 
                     if selectedLesson.mediaURL != nil {
                         mediaPlayer
-                        playbackProgress(for: selectedLesson)
                     } else if viewModel.isEditingModule {
                         mediaPlayer
                     }
@@ -155,7 +156,31 @@ struct ClassroomBrowserView: View {
     private var mediaPlayer: some View {
         Group {
             if let player = playbackService.player {
-                PlayerView(player: player)
+                if playbackService.isAudioOnly {
+                    VideoTransportControlsView(
+                        playbackService: playbackService,
+                        thumbnailProvider: thumbnailProvider,
+                        isFullScreen: false,
+                        onToggleFullScreen: presentFullScreenPlayer,
+                        showsFullScreenButton: false,
+                        looksLikeOverlay: false
+                    )
+                    .onDisappear {
+                        saveCurrentPlaybackProgress()
+                        playbackService.pause()
+                    }
+                } else {
+                    ZStack(alignment: .bottom) {
+                        PlayerView(player: player)
+
+                        VideoTransportControlsView(
+                            playbackService: playbackService,
+                            thumbnailProvider: thumbnailProvider,
+                            isFullScreen: false,
+                            onToggleFullScreen: presentFullScreenPlayer
+                        )
+                        .padding(12)
+                    }
                     .frame(height: 360)
                     .background(Color.black)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -163,6 +188,7 @@ struct ClassroomBrowserView: View {
                         saveCurrentPlaybackProgress()
                         playbackService.pause()
                     }
+                }
             } else if viewModel.selectedLesson?.mediaURL == nil {
                 ContentUnavailableView(
                     "No Media Yet",
@@ -190,15 +216,6 @@ struct ClassroomBrowserView: View {
             viewModel.replaceSelectedLessonHeroMedia(fileURL: url)
             return true
         })
-    }
-
-    private func playbackProgress(for lesson: Lesson) -> some View {
-        ProgressView(
-            value: lesson.state.playbackPositionSeconds,
-            total: max(lesson.state.playbackPositionSeconds, playbackService.durationSeconds ?? lesson.state.playbackPositionSeconds, 1)
-        ) {
-            Text("Saved position: \(formatTime(lesson.state.playbackPositionSeconds))")
-        }
     }
 
     private var notesEditor: some View {
@@ -352,11 +369,25 @@ struct ClassroomBrowserView: View {
     private func loadSelectedLesson() {
         guard let selectedLesson = viewModel.selectedLesson, let mediaURL = selectedLesson.mediaURL else {
             playbackService.clear()
+            thumbnailProvider.clear()
             return
         }
 
         playbackService.load(url: mediaURL)
         playbackService.resume(to: selectedLesson.state.playbackPositionSeconds)
+
+        guard !playbackService.isAudioOnly else {
+            thumbnailProvider.clear()
+            return
+        }
+
+        if let classroomRootURL = viewModel.classroom?.rootURL {
+            thumbnailProvider.load(
+                mediaURL: mediaURL,
+                classroomRootURL: classroomRootURL,
+                lessonRelativePath: selectedLesson.relativePath
+            )
+        }
     }
 
     private func saveCurrentPlaybackProgress() {
@@ -364,6 +395,18 @@ struct ClassroomBrowserView: View {
         viewModel.savePlaybackProgress(
             position: playbackService.currentTimeSeconds,
             duration: playbackService.durationSeconds
+        )
+    }
+
+    private func presentFullScreenPlayer() {
+        guard let player = playbackService.player else {
+            return
+        }
+
+        fullScreenController.present(
+            player: player,
+            playbackService: playbackService,
+            thumbnailProvider: thumbnailProvider
         )
     }
 
@@ -376,11 +419,6 @@ struct ClassroomBrowserView: View {
             }
             viewModel.saveSelectedNoteIfNeeded()
         }
-    }
-
-    private func formatTime(_ seconds: Double) -> String {
-        let totalSeconds = max(0, Int(seconds.rounded()))
-        return "\(totalSeconds / 60):\(String(format: "%02d", totalSeconds % 60))"
     }
 }
 

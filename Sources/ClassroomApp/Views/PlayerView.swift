@@ -6,7 +6,10 @@ struct PlayerView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> AVPlayerView {
         let playerView = AVPlayerView()
-        playerView.controlsStyle = .floating
+        // Bare video surface — transport controls are our own
+        // `VideoTransportControlsView`, so we get consistent skip/scrub/
+        // full-screen behavior instead of fighting AVKit's built-in chrome.
+        playerView.controlsStyle = .none
         playerView.videoGravity = .resizeAspect
         playerView.allowsPictureInPicturePlayback = true
         playerView.player = player

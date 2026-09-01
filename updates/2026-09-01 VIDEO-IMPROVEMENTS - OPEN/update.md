@@ -59,32 +59,58 @@ already tracks `currentTimeSeconds`, `durationSeconds`, and exposes
        cache files to disk.
 
 Given (1) and (3) both push against what AVPlayerView's built-in chrome
-can do, the likely shared direction is: drop `controlsStyle` down to
-`.none` (bare video surface) and build our own SwiftUI transport bar
-(play/pause, skip ±15s, scrubber with hover preview, full-screen toggle)
-on top of `PlaybackService`. That's a bigger lift than three independent
-small features, but it avoids fighting AVKit's chrome three separate times
-and gives consistent behavior across all three asks. Worth confirming
-before starting.
+can do, the shared direction taken: drop `controlsStyle` down to `.none`
+(bare video surface) and build our own SwiftUI transport bar (play/pause,
+skip ±15s, scrubber with hover preview, mute, full-screen toggle) on top
+of `PlaybackService`. Bigger lift than three independent small features,
+but avoids fighting AVKit's chrome three separate times and gives
+consistent behavior across all three asks.
 
-## Open questions (to resolve before/at implementation start)
+## Decisions (resolved)
 
-- Custom transport bar (own play/pause/volume/etc. — bigger lift, full
-  control) vs. layering only the missing pieces (skip buttons + hover
-  preview) on top of the existing AVPlayerView chrome, if that turns out
-  to be feasible?
-- Thumbnail preview: pre-generate a sprite sheet on lesson load, or
-  generate on demand per hover with a small debounce/cache? Where do
-  cached thumbnails live on disk?
-- Full-screen: real macOS full-screen window (green-button style) or an
-  in-app "theater mode" (video fills the app window without a system
-  full-screen transition)?
+- Custom transport bar, not layered on native AVKit chrome.
+- Thumbnails pre-generated on lesson load (not per-hover), cached to disk
+  under `.classroom/thumbnails/<lesson>/`, keyed by source file size +
+  mtime so an edited/replaced video regenerates instead of showing stale
+  frames.
+- Full-screen is a real macOS full-screen window (system green-button
+  transition), not an in-app theater mode — a dedicated `NSWindow` popped
+  out from the main window, so the sidebar/notes/attachments stay put
+  underneath rather than being hidden.
 
-## Verification (once implemented)
+## What shipped
 
-- `swift build`, `swift test`, `swift run ClassroomSmokeTests`.
-- Manual: open a lesson video, confirm skip ±15s clamps correctly at the
-  start/end of the video; confirm full-screen entry/exit preserves
-  playback position and rate; confirm scrub hover shows the correct
-  timestamp and a thumbnail that matches that point in the video, for
-  both a freshly-opened lesson and a re-opened one (cache reuse).
+- `PlaybackService` (`Sources/ClassroomCore/Services/PlaybackService.swift`):
+  `isPlaying`/`isMuted`/`isAudioOnly` state, `togglePlayPause()`,
+  `skipForward()`/`skipBackward()` (±15s, clamped to `[0, duration]`),
+  `toggleMute()`.
+- `ThumbnailService` + `ScrubThumbnailProvider` (`ClassroomCore/Services`,
+  `ClassroomCore/ViewModels`): generates a sparse, disk-cached set of
+  scrub thumbnails per lesson via `AVAssetImageGenerator`, published
+  progressively so hovering works as soon as frames exist.
+- `VideoTransportControlsView` + `ScrubberView` + `ScrubPreviewPopover`
+  (`ClassroomApp/Views`): the custom transport bar — play/pause, ±15s
+  skip (also bound to Left/Right arrow keys, Space for play/pause),
+  scrubber with hover timestamp + thumbnail, mute, full-screen.
+- `FullScreenPlayerWindowController` (`ClassroomApp/FullScreen`): pops
+  playback into its own real full-screen window; Escape, the system
+  green button, or the transport bar's own full-screen button all exit
+  the same way.
+- **Audio-only lessons** (`.mp3`/`.m4a`/`.wav`): no video surface, no
+  thumbnail generation, no full-screen button — just the transport bar
+  (play/pause, skip ±15s, scrubber, mute) sitting directly in the lesson
+  pane using normal system control colors instead of the white-on-black
+  video-overlay styling.
+- Removed the old static "Saved position" `ProgressView` — the transport
+  bar's live current/duration display made it redundant.
+
+## Verification
+
+- `swift build`, `swift test`, `swift run ClassroomSmokeTests` all pass
+  (one pre-existing, unrelated `SmokeTests` failure predates this update
+  — confirmed present on `master` before this work too).
+- Added `ThumbnailServiceTests` covering `sampleTimes` spacing/bounds.
+- Manual (in-app, by the user): confirmed the transport bar renders and
+  the ±15s skip / scrubber / time labels work against a real lesson
+  video. Full-screen and hover-thumbnail interactions, plus the new
+  audio-only bar, still need a manual pass before closing this update.

@@ -35,6 +35,13 @@ we work in this codebase — read it before making changes.
    equivalent) so the launcher isn't stale, and tell the user to relaunch it.
    Never report a task complete on the strength of a diff alone.
 
+   For manual verification of this app specifically, don't drive it with
+   screenshots/`screencapture` — ask the user to check it instead. This is
+   the user's own running app on their own screen (real classroom data,
+   not a sandboxed test target), so screenshotting it risks capturing
+   whatever else is on screen, and the user can just look and tell you
+   directly.
+
 ## How we track updates
 
 Work is organized into **updates**, tracked under `updates/`. This is the
