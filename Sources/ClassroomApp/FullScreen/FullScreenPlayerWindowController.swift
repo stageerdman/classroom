@@ -54,10 +54,13 @@ final class FullScreenPlayerWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowDidExitFullScreen(_ notification: Notification) {
-        dismiss()
+        dismissIfPresented()
     }
 
-    private func dismiss() {
+    /// Force-closes the full-screen window if one is open — used when the
+    /// selected lesson changes, so a stale player instance never lingers
+    /// full-screen behind the newly-loaded one.
+    func dismissIfPresented() {
         guard let window else {
             return
         }
@@ -85,7 +88,8 @@ private struct FullScreenPlayerView: View {
                 playbackService: playbackService,
                 thumbnailProvider: thumbnailProvider,
                 isFullScreen: true,
-                onToggleFullScreen: onExitRequested
+                onToggleFullScreen: onExitRequested,
+                showsPopoutButton: false
             )
             .padding(32)
         }

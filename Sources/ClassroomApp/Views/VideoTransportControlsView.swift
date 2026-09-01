@@ -12,9 +12,15 @@ struct VideoTransportControlsView: View {
     @ObservedObject var thumbnailProvider: ScrubThumbnailProvider
     let isFullScreen: Bool
     let onToggleFullScreen: () -> Void
+    var onTogglePopout: () -> Void = {}
 
     /// Hidden for audio lessons — there's no full-screen video to enter.
     var showsFullScreenButton: Bool = true
+
+    /// Hidden for audio lessons (nothing to pop out) and inside the
+    /// full-screen window itself (pop out from full-screen isn't a
+    /// supported flow — exit full-screen first).
+    var showsPopoutButton: Bool = true
 
     /// `true` when this bar floats over a video surface (needs
     /// white-on-black contrast regardless of app theme); `false` for the
@@ -69,6 +75,13 @@ struct VideoTransportControlsView: View {
                 Image(systemName: playbackService.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
             }
             .help(playbackService.isMuted ? "Unmute" : "Mute")
+
+            if showsPopoutButton {
+                Button(action: onTogglePopout) {
+                    Image(systemName: "pip.enter")
+                }
+                .help("Pop Out")
+            }
 
             if showsFullScreenButton {
                 Button(action: onToggleFullScreen) {

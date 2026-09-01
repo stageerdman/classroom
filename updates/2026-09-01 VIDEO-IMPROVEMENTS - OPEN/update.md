@@ -103,6 +103,21 @@ consistent behavior across all three asks.
   video-overlay styling.
 - Removed the old static "Saved position" `ProgressView` — the transport
   bar's live current/duration display made it redundant.
+- **Pop-out player** (`ClassroomApp/Popout/PopoutPlayerWindowController.swift`):
+  a "pip.enter" button next to full-screen detaches video playback into
+  an ordinary, resizable, always-on-top (`.floating` window level)
+  window the user can drag anywhere — distinct from full-screen, which
+  is a system full-screen space. While popped out, the embedded lesson
+  pane shows a "Playing in a floating window" placeholder with a
+  "Bring Back" button instead of a second copy of the video. Switching
+  lessons (or the popout's own close button) closes it automatically, so
+  a stale `AVPlayer` never lingers in a floating window.
+
+## Backlog
+
+A CapCut-style timeline scrubber (filmstrip instead of a plain line,
+zoom/pan, waveform for audio) was discussed and deliberately deferred —
+see `updates/2026-09-01 TIMELINE-SCRUBBER - BACKLOG/update.md`.
 
 ## Verification
 
@@ -112,5 +127,5 @@ consistent behavior across all three asks.
 - Added `ThumbnailServiceTests` covering `sampleTimes` spacing/bounds.
 - Manual (in-app, by the user): confirmed the transport bar renders and
   the ±15s skip / scrubber / time labels work against a real lesson
-  video. Full-screen and hover-thumbnail interactions, plus the new
-  audio-only bar, still need a manual pass before closing this update.
+  video, including the audio-only bar. Full-screen and pop-out still
+  need a manual pass before closing this update.

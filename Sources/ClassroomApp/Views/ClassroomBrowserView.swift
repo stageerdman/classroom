@@ -7,6 +7,8 @@ struct ClassroomBrowserView: View {
     @StateObject private var playbackService = PlaybackService()
     @StateObject private var thumbnailProvider = ScrubThumbnailProvider()
     @State private var fullScreenController = FullScreenPlayerWindowController()
+    @State private var popoutController = PopoutPlayerWindowController()
+    @State private var isPoppedOut = false
     @State private var selectedSidebarID: String?
     @State private var noteAutosaveTask: Task<Void, Never>?
     @State private var noteEditorHeight: CGFloat = 180
@@ -163,12 +165,11 @@ struct ClassroomBrowserView: View {
                         isFullScreen: false,
                         onToggleFullScreen: presentFullScreenPlayer,
                         showsFullScreenButton: false,
+                        showsPopoutButton: false,
                         looksLikeOverlay: false
                     )
-                    .onDisappear {
-                        saveCurrentPlaybackProgress()
-                        playbackService.pause()
-                    }
+                } else if isPoppedOut {
+                    poppedOutPlaceholder
                 } else {
                     ZStack(alignment: .bottom) {
                         PlayerView(player: player)
@@ -177,17 +178,14 @@ struct ClassroomBrowserView: View {
                             playbackService: playbackService,
                             thumbnailProvider: thumbnailProvider,
                             isFullScreen: false,
-                            onToggleFullScreen: presentFullScreenPlayer
+                            onToggleFullScreen: presentFullScreenPlayer,
+                            onTogglePopout: presentPopoutPlayer
                         )
                         .padding(12)
                     }
                     .frame(height: 360)
                     .background(Color.black)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .onDisappear {
-                        saveCurrentPlaybackProgress()
-                        playbackService.pause()
-                    }
                 }
             } else if viewModel.selectedLesson?.mediaURL == nil {
                 ContentUnavailableView(
@@ -207,6 +205,10 @@ struct ClassroomBrowserView: View {
                 .frame(minHeight: 360)
             }
         }
+        .onDisappear {
+            saveCurrentPlaybackProgress()
+            playbackService.pause()
+        }
         .overlay(
             RoundedRectangle(cornerRadius: 6)
                 .strokeBorder(isTargetedHero ? Color.accentColor : Color.clear, lineWidth: 2)
@@ -216,6 +218,22 @@ struct ClassroomBrowserView: View {
             viewModel.replaceSelectedLessonHeroMedia(fileURL: url)
             return true
         })
+    }
+
+    private var poppedOutPlaceholder: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "pip")
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+
+            Text("Playing in a floating window")
+                .foregroundStyle(.secondary)
+
+            Button("Bring Back", action: returnFromPopout)
+        }
+        .frame(maxWidth: .infinity, minHeight: 360)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     private var notesEditor: some View {
@@ -367,6 +385,12 @@ struct ClassroomBrowserView: View {
     }
 
     private func loadSelectedLesson() {
+        // A detached window (full-screen or popped-out) holds the
+        // previous lesson's `AVPlayer` — never let it linger once we're
+        // about to load a different one.
+        fullScreenController.dismissIfPresented()
+        popoutController.dismissIfPresented()
+
         guard let selectedLesson = viewModel.selectedLesson, let mediaURL = selectedLesson.mediaURL else {
             playbackService.clear()
             thumbnailProvider.clear()
@@ -408,6 +432,24 @@ struct ClassroomBrowserView: View {
             playbackService: playbackService,
             thumbnailProvider: thumbnailProvider
         )
+    }
+
+    private func presentPopoutPlayer() {
+        guard let player = playbackService.player else {
+            return
+        }
+
+        isPoppedOut = true
+        popoutController.present(
+            player: player,
+            playbackService: playbackService,
+            thumbnailProvider: thumbnailProvider,
+            onClose: { isPoppedOut = false }
+        )
+    }
+
+    private func returnFromPopout() {
+        popoutController.dismissIfPresented()
     }
 
     private func scheduleNoteAutosave() {
