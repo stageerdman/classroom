@@ -29,13 +29,13 @@ final class SmokeTests: XCTestCase {
         let root = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        try write(root, "Module/NotesOnly", marker: true, media: nil, notes: "Just text.")
+        try write(root, "Module/PageOnly", marker: true, media: nil, notes: "Just text.")
 
         let classroom = ClassroomScanner().scan(rootURL: root)
         let lesson = try XCTUnwrap(classroom.modules.first?.directLessons.first)
 
         XCTAssertNil(lesson.mediaURL)
-        XCTAssertEqual(lesson.notesURL?.lastPathComponent, "Notes.md")
+        XCTAssertEqual(lesson.pageURL?.lastPathComponent, "page.md")
     }
 
     func testModuleDescriptionReadFromDescriptionFile() throws {
@@ -102,7 +102,7 @@ final class SmokeTests: XCTestCase {
             try Data().write(to: folderURL.appendingPathComponent(media))
         }
         if let notes {
-            try Data(notes.utf8).write(to: folderURL.appendingPathComponent(NotesService.defaultNotesFileName))
+            try Data(notes.utf8).write(to: folderURL.appendingPathComponent(ClassroomScanner.pageFileName))
         }
     }
 }

@@ -14,6 +14,8 @@ public struct ClassroomScanner {
     public static let attachmentsFolderDisplayName = "Attachments"
     public static let removedFolderDisplayName = "Removed"
     public static let moduleDescriptionFileName = "description.md"
+    public static let pageFileName = "page.md"
+    public static let noteFileName = "note.md"
     /// What counts as a lesson's playable media on disk — not the same as
     /// what AVFoundation can actually *play*. `flv` in particular scans in
     /// here (so a lesson with only a `.flv` video isn't silently treated as
@@ -25,6 +27,7 @@ public struct ClassroomScanner {
 
     private let fileManager: FileManager
     private let supportedMediaExtensions: Set<String>
+    private let pageMigrationService: PageMigrationService
 
     public init(
         fileManager: FileManager = .default,
@@ -32,6 +35,7 @@ public struct ClassroomScanner {
     ) {
         self.fileManager = fileManager
         self.supportedMediaExtensions = supportedMediaExtensions
+        self.pageMigrationService = PageMigrationService(fileManager: fileManager)
     }
 
     public func scan(rootURL: URL) -> Classroom {
@@ -127,17 +131,9 @@ public struct ClassroomScanner {
             )
         }
 
-        let notesCandidates = sortedByFileName(
-            fileChildren.filter { $0.pathExtension.lowercased() == "md" }
-        )
-        if notesCandidates.count > 1 {
-            warnings.append(
-                ClassroomWarning(
-                    kind: .ambiguousLessonNotes,
-                    relativePath: lessonRelativePath,
-                    message: "Multiple notes files found: \(notesCandidates.map(\.lastPathComponent).joined(separator: ", ")). Using \(notesCandidates[0].lastPathComponent)."
-                )
-            )
+        let (pageURL, noteURL, legacyPageWarning) = resolvePageAndNoteURLs(fileChildren: fileChildren)
+        if let legacyPageWarning {
+            warnings.append(ClassroomWarning(kind: .ambiguousLessonNotes, relativePath: lessonRelativePath, message: legacyPageWarning))
         }
 
         let attachmentsDirectory = directoryChildren.first {
@@ -154,10 +150,36 @@ public struct ClassroomScanner {
             relativePath: lessonRelativePath,
             folderURL: lessonURL,
             mediaURL: mediaCandidates.first,
-            notesURL: notesCandidates.first,
+            pageURL: pageURL,
+            noteURL: noteURL,
             attachmentURLs: attachmentURLs,
             title: lessonURL.lastPathComponent
         )
+    }
+
+    /// Resolves `page.md` / `note.md` by exact (case-insensitive) filename.
+    /// If `page.md` doesn't exist yet but there's a leftover pre-split
+    /// markdown file, migrates the alphabetically-first one to `page.md`
+    /// (see `PageMigrationService`) rather than treating it as Notes —
+    /// that's what it actually was under the old single-"Notes" UI. Any
+    /// further leftover files are reported as a warning rather than acted
+    /// on, so nothing not explicitly `page.md`/`note.md` is ever touched.
+    private func resolvePageAndNoteURLs(fileChildren: [URL]) -> (pageURL: URL?, noteURL: URL?, warning: String?) {
+        let markdownFiles = sortedByFileName(fileChildren.filter { $0.pathExtension.lowercased() == "md" })
+        let explicitPageURL = markdownFiles.first { $0.lastPathComponent.caseInsensitiveCompare(Self.pageFileName) == .orderedSame }
+        let noteURL = markdownFiles.first { $0.lastPathComponent.caseInsensitiveCompare(Self.noteFileName) == .orderedSame }
+        let legacyCandidates = markdownFiles.filter { $0 != explicitPageURL && $0 != noteURL }
+
+        guard explicitPageURL == nil, let legacyCandidate = legacyCandidates.first else {
+            let leftoverNames = legacyCandidates.map(\.lastPathComponent)
+            let warning = leftoverNames.isEmpty ? nil : "Extra markdown files found: \(leftoverNames.joined(separator: ", ")). Not used as Page or Notes."
+            return (explicitPageURL, noteURL, warning)
+        }
+
+        let migratedPageURL = pageMigrationService.migrate(legacyCandidateURL: legacyCandidate, pageFileName: Self.pageFileName)
+        let ignoredNames = legacyCandidates.dropFirst().map(\.lastPathComponent)
+        let warning = ignoredNames.isEmpty ? nil : "Extra markdown files found: \(ignoredNames.joined(separator: ", ")). Not used as Page or Notes."
+        return (migratedPageURL, noteURL, warning)
     }
 
     private func isLessonFolder(_ url: URL) -> Bool {

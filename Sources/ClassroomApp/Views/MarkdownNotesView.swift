@@ -5,6 +5,10 @@ struct MarkdownNotesView: NSViewRepresentable {
     @Binding var text: String
     @Binding var contentHeight: CGFloat
     let onTextChange: () -> Void
+    /// `false` renders styled Markdown but blocks typing/selection-editing
+    /// — used for Page outside Module edit mode, where the content is
+    /// meant to be read, not edited.
+    var isEditable: Bool = true
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -24,6 +28,7 @@ struct MarkdownNotesView: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 0, height: 8)
         textView.font = .systemFont(ofSize: 15)
         textView.string = text
+        textView.isEditable = isEditable
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
         textView.minSize = NSSize(width: 0, height: 0)
@@ -48,6 +53,10 @@ struct MarkdownNotesView: NSViewRepresentable {
         if textView.string != text {
             textView.string = text
             context.coordinator.applyMarkdownStyle()
+        }
+
+        if textView.isEditable != isEditable {
+            textView.isEditable = isEditable
         }
 
         context.coordinator.updateContentHeight()

@@ -50,13 +50,15 @@ public struct LessonCategory: Equatable {
 
 /// A Lesson is a folder marked with a hidden `.lesson` file (see
 /// `ClassroomScanner.lessonMarkerFileName`). The folder may contain at most
-/// one playable media file, at most one Markdown notes file, and an
-/// optional `Attachments` folder.
+/// one playable media file, a `page.md` (authored lesson content, read-only
+/// outside Module edit mode), a `note.md` (the viewer's own notes, always
+/// editable), and an optional `Attachments` folder.
 public struct Lesson: Equatable {
     public let relativePath: String
     public let folderURL: URL
     public let mediaURL: URL?
-    public let notesURL: URL?
+    public let pageURL: URL?
+    public let noteURL: URL?
     public let attachmentURLs: [URL]
     public let title: String
     public var state: LessonState
@@ -65,7 +67,8 @@ public struct Lesson: Equatable {
         relativePath: String,
         folderURL: URL,
         mediaURL: URL?,
-        notesURL: URL?,
+        pageURL: URL?,
+        noteURL: URL?,
         attachmentURLs: [URL] = [],
         title: String,
         state: LessonState = LessonState()
@@ -73,7 +76,8 @@ public struct Lesson: Equatable {
         self.relativePath = relativePath
         self.folderURL = folderURL
         self.mediaURL = mediaURL
-        self.notesURL = notesURL
+        self.pageURL = pageURL
+        self.noteURL = noteURL
         self.attachmentURLs = attachmentURLs
         self.title = title
         self.state = state

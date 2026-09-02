@@ -58,7 +58,10 @@ public struct DeveloperScannerViewModel {
         if lesson.mediaURL != nil {
             parts.append("media")
         }
-        if lesson.notesURL != nil {
+        if lesson.pageURL != nil {
+            parts.append("page")
+        }
+        if lesson.noteURL != nil {
             parts.append("notes")
         }
         if !lesson.attachmentURLs.isEmpty {

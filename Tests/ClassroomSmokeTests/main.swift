@@ -81,7 +81,8 @@ try makeLessonFolder(at: root, "01 Foundations/Lesson 10")
 try createFile(at: root, "01 Foundations/ignored.pdf")
 try makeLessonFolder(at: root, "01 Foundations/.Hidden Lesson")
 
-// Fear has two candidate media files (ambiguous), custom-named notes, and attachments.
+// Fear has two candidate media files (ambiguous) and a pre-split,
+// custom-named markdown file that should migrate to page.md on scan.
 let fearFolder = root.appendingPathComponent("01 Foundations/Mindset/Fear", isDirectory: true)
 try fileManager.createDirectory(at: fearFolder, withIntermediateDirectories: true)
 try Data().write(to: fearFolder.appendingPathComponent(ClassroomScanner.lessonMarkerFileName))
@@ -123,7 +124,10 @@ expect(
     fearLesson.mediaURL?.lastPathComponent == "Fear.MOV" || fearLesson.mediaURL?.lastPathComponent == "Fear.m4v",
     "Ambiguous lesson media should still resolve to one deterministic candidate"
 )
-expect(fearLesson.notesURL?.lastPathComponent == "Fear-Notes.md", "Lesson notes file should be resolved regardless of its name")
+expect(fearLesson.pageURL?.lastPathComponent == "page.md", "A pre-split markdown file should migrate to page.md on scan")
+let migratedFearPageText = try String(contentsOf: fearLesson.pageURL!, encoding: .utf8)
+expect(migratedFearPageText == "Fear notes.", "Migration should rename the file in place, preserving its content")
+expect(!fileManager.fileExists(atPath: fearFolder.appendingPathComponent("Fear-Notes.md").path), "The pre-split file should no longer exist under its old name after migration")
 expect(
     Set(fearLesson.attachmentURLs.map(\.lastPathComponent)) == ["Handout.pdf", "Worksheet.txt"],
     "Attachments folder contents should be exposed as attachment URLs"
@@ -399,7 +403,8 @@ let alphaLessonForNotes = Lesson(
     relativePath: "Module/Alpha",
     folderURL: alphaFolderURL,
     mediaURL: lessonMediaURL(at: metadataRoot, "Module/Alpha"),
-    notesURL: nil,
+    pageURL: nil,
+    noteURL: nil,
     title: "Alpha"
 )
 
@@ -458,7 +463,7 @@ try "Original".write(to: preservedNoteURL, atomically: true, encoding: .utf8)
 try fileManager.setAttributes([.posixPermissions: 0o500], ofItemAtPath: preservedNotesDirectory.path)
 var didFailToSaveLockedNote = false
 do {
-    try notesService.saveNotes("Replacement", to: preservedNoteURL)
+    try MarkdownFileService().save("Replacement", to: preservedNoteURL)
 } catch {
     didFailToSaveLockedNote = true
 }

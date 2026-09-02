@@ -15,7 +15,7 @@ struct MarkdownFileSheet: View {
     @State private var errorMessage: String?
     @State private var saveTask: Task<Void, Never>?
 
-    private let notesService = NotesService()
+    private let markdownFileService = MarkdownFileService()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -49,7 +49,7 @@ struct MarkdownFileSheet: View {
 
     private func load() {
         do {
-            text = try notesService.loadNotes(at: fileURL)
+            text = try markdownFileService.load(at: fileURL)
         } catch {
             errorMessage = "Could not load this file."
         }
@@ -68,7 +68,7 @@ struct MarkdownFileSheet: View {
 
     private func saveNow() {
         do {
-            try notesService.saveNotes(text, to: fileURL)
+            try markdownFileService.save(text, to: fileURL)
             errorMessage = nil
         } catch {
             errorMessage = "Could not save this file."

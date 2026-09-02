@@ -12,6 +12,8 @@ struct ClassroomBrowserView: View {
     @State private var selectedSidebarID: String?
     @State private var noteAutosaveTask: Task<Void, Never>?
     @State private var noteEditorHeight: CGFloat = 180
+    @State private var pageAutosaveTask: Task<Void, Never>?
+    @State private var pageEditorHeight: CGFloat = 180
     @State private var isTargetedHero = false
     @State private var isTargetedNotes = false
     @State private var isTargetedAttachments = false
@@ -59,7 +61,9 @@ struct ClassroomBrowserView: View {
         }
         .onDisappear {
             noteAutosaveTask?.cancel()
+            pageAutosaveTask?.cancel()
             viewModel.saveSelectedNoteIfNeeded()
+            viewModel.saveSelectedPageIfNeeded()
         }
         .frame(minWidth: 900, minHeight: 560)
         .sheet(isPresented: Binding(
@@ -122,7 +126,19 @@ struct ClassroomBrowserView: View {
                         mediaPlayer
                     }
 
-                    notesEditor
+                    LessonContentSectionSelector(
+                        selectedSections: viewModel.selectedContentSections,
+                        onToggle: viewModel.toggleContentSection
+                    )
+
+                    LessonContentPane(sections: viewModel.selectedContentSections) { section in
+                        switch section {
+                        case .page:
+                            PageEditorView(viewModel: viewModel, editorHeight: $pageEditorHeight, onTextChange: schedulePageAutosave)
+                        case .notes:
+                            NotesEditorView(viewModel: viewModel, editorHeight: $noteEditorHeight, isTargeted: $isTargetedNotes, onTextChange: scheduleNoteAutosave)
+                        }
+                    }
 
                     if !selectedLesson.attachmentURLs.isEmpty || viewModel.isEditingModule {
                         attachmentsSection(selectedLesson.attachmentURLs)
@@ -236,53 +252,6 @@ struct ClassroomBrowserView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
-    private var notesEditor: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Notes")
-                    .font(.headline)
-
-                Spacer()
-
-                if viewModel.isNoteDirty {
-                    Text("Saving...")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            MarkdownNotesView(
-                text: Binding(
-                    get: { viewModel.noteText },
-                    set: { viewModel.updateNoteText($0) }
-                ),
-                contentHeight: $noteEditorHeight,
-                onTextChange: scheduleNoteAutosave
-            )
-            .frame(minHeight: noteEditorHeight, maxHeight: noteEditorHeight)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(isTargetedNotes ? Color.accentColor : Color.clear, lineWidth: 2)
-            )
-            .modifier(ConditionalURLDropModifier(isEnabled: viewModel.isEditingModule, isTargeted: $isTargetedNotes) { urls in
-                guard let url = urls.first else { return false }
-                viewModel.insertNotesLinkForSelectedLesson(fileURL: url)
-                return true
-            })
-
-            if viewModel.isEditingModule {
-                Text("Drop a file here to insert a link to it — the file stays where it is.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let noteErrorMessage = viewModel.noteErrorMessage {
-                Text(noteErrorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
-        }
-    }
 
     private func attachmentsSection(_ attachmentURLs: [URL]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -357,6 +326,7 @@ struct ClassroomBrowserView: View {
 
     private func openFolder() {
         viewModel.saveSelectedNoteIfNeeded()
+        viewModel.saveSelectedPageIfNeeded()
 
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -462,22 +432,15 @@ struct ClassroomBrowserView: View {
             viewModel.saveSelectedNoteIfNeeded()
         }
     }
-}
 
-/// Only registers as a drop target when `isEnabled` — outside edit mode
-/// the view underneath behaves exactly as it always has.
-private struct ConditionalURLDropModifier: ViewModifier {
-    let isEnabled: Bool
-    @Binding var isTargeted: Bool
-    let action: ([URL]) -> Bool
-
-    func body(content: Content) -> some View {
-        if isEnabled {
-            content.dropDestination(for: URL.self) { urls, _ in
-                action(urls)
-            } isTargeted: { isTargeted = $0 }
-        } else {
-            content
+    private func schedulePageAutosave() {
+        pageAutosaveTask?.cancel()
+        pageAutosaveTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled else {
+                return
+            }
+            viewModel.saveSelectedPageIfNeeded()
         }
     }
 }

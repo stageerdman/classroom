@@ -18,12 +18,16 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     @Published public private(set) var classroomProgress = ProgressSummary(completedLessons: 0, totalLessons: 0)
     @Published public private(set) var moduleProgress: [ModuleProgressSummary] = []
     @Published public private(set) var galleryModules: [GalleryModule] = []
+    @Published public private(set) var pageText = ""
+    @Published public private(set) var isPageDirty = false
+    @Published public private(set) var pageErrorMessage: String?
     @Published public private(set) var noteText = ""
     @Published public private(set) var isNoteDirty = false
     @Published public private(set) var noteErrorMessage: String?
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var isEditingModule = false
     @Published public private(set) var pendingTransform: PendingTransform?
+    @Published public private(set) var selectedContentSections: [LessonContentSection] = [.page]
 
     /// Undo/redo for the structural editing operations (rename, create,
     /// move/reparent, transform-to-lesson, trash) — wired to the system
@@ -49,7 +53,9 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     private let recentStore: RecentClassroomStore
     private let accessStore: FolderAccessStore
     private let metadataStore: MetadataStore
+    private let pageService: PageService
     private let notesService: NotesService
+    private let markdownFileService: MarkdownFileService
     private let editorService: ClassroomEditorService
     private var currentRootURL: URL?
 
@@ -58,14 +64,18 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         recentStore: RecentClassroomStore = RecentClassroomStore(),
         accessStore: FolderAccessStore = SecurityScopedFolderAccessStore(),
         metadataStore: MetadataStore = MetadataStore(),
+        pageService: PageService = PageService(),
         notesService: NotesService = NotesService(),
+        markdownFileService: MarkdownFileService = MarkdownFileService(),
         editorService: ClassroomEditorService = ClassroomEditorService()
     ) {
         self.scanner = scanner
         self.recentStore = recentStore
         self.accessStore = accessStore
         self.metadataStore = metadataStore
+        self.pageService = pageService
         self.notesService = notesService
+        self.markdownFileService = markdownFileService
         self.editorService = editorService
         self.recentClassrooms = recentStore.list()
     }
@@ -77,7 +87,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     }
 
     public func openRecent(_ recent: RecentClassroom) {
-        saveSelectedNoteIfNeeded()
+        saveSelectedLessonContentIfNeeded()
         let resolvedURL = accessStore.resolvedURL(forPath: recent.path)
         openResolvedURL(resolvedURL, shouldAddToRecent: true)
     }
@@ -100,13 +110,13 @@ public final class ClassroomBrowserViewModel: ObservableObject {
             return
         }
 
-        saveSelectedNoteIfNeeded()
+        saveSelectedLessonContentIfNeeded()
         selectedModuleID = id
         clearSelectedLesson()
     }
 
     public func closeModule() {
-        saveSelectedNoteIfNeeded()
+        saveSelectedLessonContentIfNeeded()
         selectedModuleID = nil
         isEditingModule = false
         clearSelectedLesson()
@@ -121,7 +131,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     }
 
     public func refresh() {
-        saveSelectedNoteIfNeeded()
+        saveSelectedLessonContentIfNeeded()
 
         guard let currentRootURL else {
             errorMessage = "Open a classroom folder before refreshing."
@@ -132,7 +142,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     }
 
     public func selectLesson(_ lesson: SidebarLesson) {
-        saveSelectedNoteIfNeeded()
+        saveSelectedLessonContentIfNeeded()
         selectLesson(relativePath: lesson.relativePath)
     }
 
@@ -157,12 +167,12 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     }
 
     public func selectNextLesson() {
-        saveSelectedNoteIfNeeded()
+        saveSelectedLessonContentIfNeeded()
         selectAdjacentLesson(offset: 1)
     }
 
     public func selectPreviousLesson() {
-        saveSelectedNoteIfNeeded()
+        saveSelectedLessonContentIfNeeded()
         selectAdjacentLesson(offset: -1)
     }
 
@@ -295,6 +305,42 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
     }
 
+    /// Page is only ever edited while `isEditingModule` is true — the UI
+    /// switches `MarkdownNotesView` to non-editable otherwise, so this
+    /// simply mirrors the Notes save path without re-checking that here.
+    public func updatePageText(_ text: String) {
+        pageText = text
+        isPageDirty = true
+        pageErrorMessage = nil
+    }
+
+    public func saveSelectedPageIfNeeded() {
+        guard
+            isPageDirty,
+            let selectedLesson,
+            !pageText.isEmpty || FileManager.default.fileExists(atPath: pageService.pageURL(for: selectedLesson).path)
+        else {
+            return
+        }
+
+        do {
+            try pageService.savePage(pageText, for: selectedLesson)
+            isPageDirty = false
+            pageErrorMessage = nil
+        } catch {
+            pageErrorMessage = "Page could not be saved."
+        }
+    }
+
+    public func toggleContentSection(_ section: LessonContentSection) {
+        selectedContentSections = ContentSectionSelectionService.toggling(section, in: selectedContentSections)
+    }
+
+    private func saveSelectedLessonContentIfNeeded() {
+        saveSelectedNoteIfNeeded()
+        saveSelectedPageIfNeeded()
+    }
+
     public static func sidebar(from classroom: Classroom) -> ClassroomSidebar {
         ClassroomSidebar(
             title: classroom.name,
@@ -362,7 +408,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
 
         do {
-            try notesService.saveNotes(text, to: moduleURL.appendingPathComponent(ClassroomScanner.moduleDescriptionFileName))
+            try markdownFileService.save(text, to: moduleURL.appendingPathComponent(ClassroomScanner.moduleDescriptionFileName))
             refresh()
         } catch {
             errorMessage = "Description could not be saved."
@@ -880,7 +926,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
             clearSelectedLesson()
         } else if selectedLessonPath != nil {
             selectedLesson = lesson(for: selectedLessonPath, in: mergedClassroom)
-            loadNotesForSelectedLesson()
+            loadLessonContentForSelectedLesson()
         }
 
         if shouldAddToRecent {
@@ -918,8 +964,13 @@ public final class ClassroomBrowserViewModel: ObservableObject {
 
         selectedLessonPath = selected.relativePath
         selectedLesson = selected
-        loadNotesForSelectedLesson()
+        loadLessonContentForSelectedLesson()
         errorMessage = nil
+    }
+
+    private func loadLessonContentForSelectedLesson() {
+        loadNotesForSelectedLesson()
+        loadPageForSelectedLesson()
     }
 
     private func loadNotesForSelectedLesson() {
@@ -938,6 +989,25 @@ public final class ClassroomBrowserViewModel: ObservableObject {
             noteText = ""
             isNoteDirty = false
             noteErrorMessage = "Notes could not be loaded."
+        }
+    }
+
+    private func loadPageForSelectedLesson() {
+        guard let selectedLesson else {
+            pageText = ""
+            isPageDirty = false
+            pageErrorMessage = nil
+            return
+        }
+
+        do {
+            pageText = try pageService.loadPage(for: selectedLesson)
+            isPageDirty = false
+            pageErrorMessage = nil
+        } catch {
+            pageText = ""
+            isPageDirty = false
+            pageErrorMessage = "Page could not be loaded."
         }
     }
 
@@ -996,6 +1066,9 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         noteText = ""
         isNoteDirty = false
         noteErrorMessage = nil
+        pageText = ""
+        isPageDirty = false
+        pageErrorMessage = nil
     }
 
     private func updateProgressSummaries() {
