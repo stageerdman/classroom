@@ -11,12 +11,13 @@ struct ClassroomBrowserView: View {
     @State private var isPoppedOut = false
     @State private var selectedSidebarID: String?
     @State private var noteAutosaveTask: Task<Void, Never>?
+    @State private var noteEditorHeight: CGFloat = 180
     @State private var pageAutosaveTask: Task<Void, Never>?
+    @State private var pageEditorHeight: CGFloat = 180
     @State private var isTargetedHero = false
     @State private var isTargetedNotes = false
     @State private var isTargetedAttachments = false
-    @State private var pendingTimenoteInsert: TimenoteInsertRequest?
-    @State private var timenoteInsertRequestCounter = 0
+    @State private var noteFocusRequest = 0
     @State private var isTextEditorFocused = false
     @State private var openMarkdownFileURL: URL?
 
@@ -137,6 +138,7 @@ struct ClassroomBrowserView: View {
                         case .page:
                             PageEditorView(
                                 viewModel: viewModel,
+                                editorHeight: $pageEditorHeight,
                                 onTextChange: schedulePageAutosave,
                                 onFocusChange: { isTextEditorFocused = $0 }
                             )
@@ -144,8 +146,9 @@ struct ClassroomBrowserView: View {
                             NotesEditorView(
                                 viewModel: viewModel,
                                 playbackService: playbackService,
+                                editorHeight: $noteEditorHeight,
                                 isTargeted: $isTargetedNotes,
-                                timenoteInsertRequest: pendingTimenoteInsert,
+                                focusRequest: noteFocusRequest,
                                 onTextChange: scheduleNoteAutosave,
                                 onFocusChange: { isTextEditorFocused = $0 }
                             )
@@ -450,9 +453,8 @@ struct ClassroomBrowserView: View {
     }
 
     private func insertTimenoteAtCurrentPlaybackPosition() {
-        viewModel.ensureContentSectionVisible(.notes)
-        timenoteInsertRequestCounter += 1
-        pendingTimenoteInsert = TimenoteInsertRequest(id: timenoteInsertRequestCounter, seconds: playbackService.currentTimeSeconds)
+        viewModel.insertTimenoteForSelectedLesson(atSeconds: playbackService.currentTimeSeconds)
+        noteFocusRequest += 1
     }
 
     private func schedulePageAutosave() {

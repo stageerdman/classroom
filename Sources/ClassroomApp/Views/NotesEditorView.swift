@@ -4,12 +4,11 @@ import SwiftUI
 /// The viewer's own running notes — always editable, regardless of Module
 /// edit mode. Backed by `note.md` via `ClassroomBrowserViewModel`.
 struct NotesEditorView: View {
-    static let editorHeight: CGFloat = 420
-
     @ObservedObject var viewModel: ClassroomBrowserViewModel
     @ObservedObject var playbackService: PlaybackService
+    @Binding var editorHeight: CGFloat
     @Binding var isTargeted: Bool
-    let timenoteInsertRequest: TimenoteInsertRequest?
+    let focusRequest: Int
     let onTextChange: () -> Void
     var onFocusChange: (Bool) -> Void = { _ in }
 
@@ -28,18 +27,19 @@ struct NotesEditorView: View {
                 }
             }
 
-            BlockNoteEditorView(
+            MarkdownNotesView(
                 text: Binding(
                     get: { viewModel.noteText },
                     set: { viewModel.updateNoteText($0) }
                 ),
-                currentPlaybackSeconds: playbackService.currentTimeSeconds,
-                timenoteInsertRequest: timenoteInsertRequest,
+                contentHeight: $editorHeight,
+                onTextChange: onTextChange,
+                onTimenoteSlashCommand: { TimenoteFormat.linePrefix(timestampSeconds: playbackService.currentTimeSeconds) },
                 onTimenoteClick: { playbackService.seek(to: $0) },
-                onFocusChange: onFocusChange,
-                onTextChange: onTextChange
+                focusRequest: focusRequest,
+                onFocusChange: onFocusChange
             )
-            .frame(minHeight: Self.editorHeight, maxHeight: Self.editorHeight)
+            .frame(minHeight: editorHeight, maxHeight: editorHeight)
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(isTargeted ? Color.accentColor : Color.clear, lineWidth: 2)
