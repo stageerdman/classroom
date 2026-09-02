@@ -21,7 +21,7 @@ original product and engineering spec,
 `updates/2026-08-30 GALLERY-LESSON-FOLDERS - CLOSED/update.md` for the
 gallery/lesson-folder update,
 `updates/2026-08-30 MODULE-EDITOR - CLOSED/update.md` for the editor, and
-`updates/2026-09-02 NOTES-PAGE-SPLIT - OPEN/update.md` for the Page/Notes
+`updates/2026-09-02 NOTES-PAGE-SPLIT - CLOSED/update.md` for the Page/Notes
 split and timenotes.
 
 ## Structure
@@ -130,7 +130,7 @@ scripts/create-launcher-app.sh
 - `webviews/` — standalone Node/npm web projects whose static build
   output gets bundled as app resources (currently just
   `blocknote-spike/`, a dev-only evaluation window — see
-  `updates/2026-09-02 BLOCKNOTE-SPIKE - OPEN/update.md`). `swift build`
+  `updates/2026-09-02 BLOCKNOTE-SPIKE - CLOSED/update.md`). `swift build`
   never needs Node; only editing a `webviews/*` project does, via its
   own `scripts/build-*.sh` to refresh the bundled copy under
   `Sources/ClassroomApp/Resources/`.

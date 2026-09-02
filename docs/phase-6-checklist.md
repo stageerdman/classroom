@@ -1,6 +1,6 @@
 # Phase 6 Checklist
 
-> Superseded by `updates/2026-09-02 NOTES-PAGE-SPLIT - OPEN/update.md`:
+> Superseded by `updates/2026-09-02 NOTES-PAGE-SPLIT - CLOSED/update.md`:
 > the single "first `.md` file found" lookup below was replaced by fixed
 > `page.md`/`note.md` filenames, with a two-section Page/Notes UI, split
 > view, timestamped notes, and Obsidian-style live-preview editing. This

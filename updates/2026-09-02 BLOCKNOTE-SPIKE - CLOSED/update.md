@@ -83,3 +83,22 @@ bridge for load/save, migrating `page.md`/`note.md` handling (plain
 markdown vs. BlockNote's native JSON block format), a custom BlockNote
 block type for timenotes with click-to-seek, and replacing
 `PageEditorView`/`NotesEditorView` for real.
+
+## Real integration attempted and reverted (2026-09-02)
+
+The spike was greenlit and the full integration was built (JS↔Swift
+bridge, `page.md`/`note.md` load/save through it, timenotes reworked as
+plain markdown links, `/timenote` slash command, focus tracking) — see
+the reverted commit "Replace native Page/Notes editor with BlockNote for
+real". After trying it, the user's call: "this change wasn't good" —
+reverted via `git revert` back to this spike-only state rather than
+keeping any of it. Specifics of what didn't work weren't captured before
+reverting; worth asking before attempting this direction again, since
+the failure mode (interaction feel? the timenote-as-link format? editor
+height/scrolling? something else?) changes what a next attempt should do
+differently.
+
+This update is being closed as "spike proven technically possible, but
+the real integration wasn't an improvement in practice." Any future
+attempt at replacing the native editor should start from this note, not
+from scratch.
