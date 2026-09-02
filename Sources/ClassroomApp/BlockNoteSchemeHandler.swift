@@ -1,19 +1,25 @@
 import WebKit
 
-/// Serves the bundled BlockNote spike build over a custom URL scheme
-/// instead of `file://`. WebKit refuses to load `<script type="module">`
-/// (what Vite's build output uses) over `file://` — there's no origin for
-/// CORS to key off of — so a scheme with a real origin is required even
-/// though everything's still local/offline. Requests for
+/// Serves a bundled static web build over a custom URL scheme instead of
+/// `file://`. WebKit refuses to load `<script type="module">` (what
+/// Vite's build output uses) over `file://` — there's no origin for CORS
+/// to key off of — so a scheme with a real origin is required even though
+/// everything's still local/offline. Requests for
 /// `classroom-blocknote://local/<path>` are mapped to
-/// `Resources/BlockNoteSpike/<path>` in the app bundle.
+/// `Resources/<resourceSubdirectory>/<path>` in the app bundle.
 final class BlockNoteSchemeHandler: NSObject, WKURLSchemeHandler {
     static let scheme = "classroom-blocknote"
+
+    private let resourceSubdirectory: String
+
+    init(resourceSubdirectory: String) {
+        self.resourceSubdirectory = resourceSubdirectory
+    }
 
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         guard
             let url = urlSchemeTask.request.url,
-            let fileURL = Self.resourceURL(for: url),
+            let fileURL = resourceURL(for: url),
             let data = try? Data(contentsOf: fileURL)
         else {
             urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
@@ -34,15 +40,15 @@ final class BlockNoteSchemeHandler: NSObject, WKURLSchemeHandler {
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
 
     /// `classroom-blocknote://local/assets/index-XXXX.js` → the matching
-    /// file inside the bundled `BlockNoteSpike` resource directory. An
-    /// empty or missing path resolves to `index.html`.
-    private static func resourceURL(for requestURL: URL) -> URL? {
+    /// file inside the bundled resource directory. An empty or missing
+    /// path resolves to `index.html`.
+    private func resourceURL(for requestURL: URL) -> URL? {
         let path = requestURL.path.isEmpty || requestURL.path == "/" ? "/index.html" : requestURL.path
         let relativePath = String(path.dropFirst())
         guard let resourceURL = Bundle.module.resourceURL else {
             return nil
         }
-        return resourceURL.appendingPathComponent("BlockNoteSpike").appendingPathComponent(relativePath)
+        return resourceURL.appendingPathComponent(resourceSubdirectory).appendingPathComponent(relativePath)
     }
 
     private static func mimeType(for pathExtension: String) -> String {

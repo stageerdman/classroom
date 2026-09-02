@@ -4,8 +4,9 @@ import SwiftUI
 /// The lesson's authored content — read-only unless the containing Module
 /// is in edit mode. Backed by `page.md` via `ClassroomBrowserViewModel`.
 struct PageEditorView: View {
+    static let editorHeight: CGFloat = 420
+
     @ObservedObject var viewModel: ClassroomBrowserViewModel
-    @Binding var editorHeight: CGFloat
     let onTextChange: () -> Void
     var onFocusChange: (Bool) -> Void = { _ in }
 
@@ -24,17 +25,16 @@ struct PageEditorView: View {
                 }
             }
 
-            MarkdownNotesView(
+            BlockNoteEditorView(
                 text: Binding(
                     get: { viewModel.pageText },
                     set: { viewModel.updatePageText($0) }
                 ),
-                contentHeight: $editorHeight,
-                onTextChange: onTextChange,
                 isEditable: viewModel.isEditingModule,
-                onFocusChange: onFocusChange
+                onFocusChange: onFocusChange,
+                onTextChange: onTextChange
             )
-            .frame(minHeight: editorHeight, maxHeight: editorHeight)
+            .frame(minHeight: Self.editorHeight, maxHeight: Self.editorHeight)
 
             if !viewModel.isEditingModule, viewModel.pageText.isEmpty {
                 Text("This lesson has no page content yet.")

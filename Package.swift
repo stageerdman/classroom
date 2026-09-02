@@ -31,7 +31,7 @@ let package = Package(
             resources: [
                 .copy("Resources/classroom-icon.png"),
                 .copy("Resources/classroom-wordmark.png"),
-                .copy("Resources/BlockNoteSpike")
+                .copy("Resources/BlockNoteEditor")
             ]
         ),
         .executableTarget(

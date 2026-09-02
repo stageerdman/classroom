@@ -488,12 +488,14 @@ await MainActor.run {
 
     notesViewModel.toggleContentSection(.page)
     notesViewModel.toggleContentSection(.notes)
-    expect(notesViewModel.selectedContentSections == [.page], "Setup: only Page should be visible before the insertion test below")
+    expect(notesViewModel.selectedContentSections == [.page], "Setup: only Page should be visible before the visibility test below")
 
-    notesViewModel.updateNoteText("")
-    notesViewModel.insertTimenoteForSelectedLesson(atSeconds: 65.25)
-    expect(notesViewModel.noteText == "> [!timenote 00:01:05.250] ", "Inserting a timenote should append its line prefix to Notes")
-    expect(notesViewModel.selectedContentSections.contains(.notes), "Inserting a timenote should ensure Notes is visible even if it wasn't before")
+    // The actual timenote insertion (comment-icon button, `/timenote`
+    // slash command) now happens inside the BlockNote WebView via a JS
+    // bridge — not testable here — but the ViewModel still owns "make
+    // sure Notes is on screen" for that flow.
+    notesViewModel.ensureContentSectionVisible(.notes)
+    expect(notesViewModel.selectedContentSections.contains(.notes), "Ensuring Notes visible should add it to the selection even if it wasn't there")
 }
 
 // MARK: - Ordering: saved order keyed by lesson folder name

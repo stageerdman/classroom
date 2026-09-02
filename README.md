@@ -20,9 +20,11 @@ media, notes, or attachments. See `classroom_spec.md` for the
 original product and engineering spec,
 `updates/2026-08-30 GALLERY-LESSON-FOLDERS - CLOSED/update.md` for the
 gallery/lesson-folder update,
-`updates/2026-08-30 MODULE-EDITOR - CLOSED/update.md` for the editor, and
-`updates/2026-09-02 NOTES-PAGE-SPLIT - OPEN/update.md` for the Page/Notes
-split and timenotes.
+`updates/2026-08-30 MODULE-EDITOR - CLOSED/update.md` for the editor,
+`updates/2026-09-02 NOTES-PAGE-SPLIT - CLOSED/update.md` for the Page/Notes
+split and timenotes, and
+`updates/2026-09-02 BLOCKNOTE-EDITOR - OPEN/update.md` for the BlockNote
+rich text editor.
 
 ## Structure
 
@@ -76,27 +78,31 @@ content: read-only unless the containing Module is in edit mode. **Notes**
 (`note.md`) is the viewer's own running notes: always editable, in or out
 of edit mode.
 
-Both editors render live Obsidian-style styling as you type —
-`#`/`##`/`###` headers, `**bold**`, `*italic*`, `` `code` ``, `> quotes`,
-`- [ ]` task lists, `==highlighted text==`, and `[text](url)` links all get
-styled inline. Markdown syntax markers are fully hidden except on the
-line the cursor is currently on, where they render small and dimmed —
-click into a line to see (and edit) its raw markdown, click away and it
-collapses back to styled text. Cmd-B/Cmd-I/Cmd-U wrap or unwrap the
-current selection with the matching marker (`<u>...</u>` for underline,
-since CommonMark has no native syntax for it).
+Both are edited with [BlockNote](https://github.com/TypeCellOS/BlockNote),
+a block-based rich text editor running in an embedded `WKWebView`
+(`BlockNoteEditorView.swift`) — not a native AppKit text view. `page.md`/
+`note.md` on disk stay ordinary Markdown files; BlockNote converts to/from
+Markdown on load/save (`blocksToMarkdownLossy`/`tryParseMarkdownToBlocks`)
+so the rest of the app never knows the editing surface is a web view.
+See `updates/2026-09-02 BLOCKNOTE-EDITOR - OPEN/update.md` for how the
+web app is built and bridged to Swift, and
+`webviews/blocknote-editor/` for its source.
 
-Notes support **timenotes** — lines that link back to a moment in the
-lesson's video/audio: `> [!timenote HH:MM:SS.mmm] your note text`,
-rendered as a clickable timestamp pill that seeks playback. Create one by
-clicking the comment-bubble button in the video transport bar (inserts a
-timenote at the current position and focuses Notes), or by typing
-`/timenote` and pressing Enter inside Notes, Notion-style. `HH:MM:SS.mmm`
-(period-delimited milliseconds) is deliberately the same clock a future
-transcript feature would use, so notes and transcript cues can line up
-without a conversion step. Any Markdown file opened from a ghost/
-attachment while editing gets the same live styling (minus timenotes,
-which are Notes-specific).
+Notes support **timenotes** — inline links back to a moment in the
+lesson's video/audio, rendered as a clickable timestamp
+(`[HH:MM:SS.mmm](classroom-timenote:<seconds>) your note text` — plain
+CommonMark, no custom syntax). Create one by clicking the comment-bubble
+button in the video transport bar (inserts a timenote at the current
+position and focuses Notes), or by typing `/timenote` inside Notes,
+Notion-style. `HH:MM:SS.mmm` (period-delimited milliseconds) is
+deliberately the same clock a future transcript feature would use, so
+notes and transcript cues can line up without a conversion step.
+
+Any other Markdown file opened from a ghost/attachment while editing
+still opens in the app's original lightweight native editor
+(`MarkdownNotesView.swift`) — Obsidian-style live styling, hidden syntax
+markers, Cmd-B/I/U — since those are one-off arbitrary files, not the
+main Page/Notes editing surface.
 
 This is a breaking format change from the original flat
 `Lesson Name.mp4` + `Lesson Name.md` layout — classrooms in the old format
@@ -129,8 +135,8 @@ scripts/create-launcher-app.sh
   `CLAUDE.md` for the workflow).
 - `webviews/` — standalone Node/npm web projects whose static build
   output gets bundled as app resources (currently just
-  `blocknote-spike/`, a dev-only evaluation window — see
-  `updates/2026-09-02 BLOCKNOTE-SPIKE - OPEN/update.md`). `swift build`
+  `blocknote-editor/`, the Page/Notes editor — see
+  `updates/2026-09-02 BLOCKNOTE-EDITOR - OPEN/update.md`). `swift build`
   never needs Node; only editing a `webviews/*` project does, via its
   own `scripts/build-*.sh` to refresh the bundled copy under
   `Sources/ClassroomApp/Resources/`.

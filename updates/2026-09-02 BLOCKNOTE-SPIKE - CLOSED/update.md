@@ -1,5 +1,16 @@
 # BlockNote Spike
 
+## Closing summary (2026-09-02)
+
+Spike succeeded: embedding worked once the `file://` module-loading issue
+was fixed, and the user liked the editing feel enough to greenlit the
+real integration. Superseded by
+`updates/2026-09-02 BLOCKNOTE-EDITOR - OPEN/update.md`, which replaces
+this spike's throwaway dev window and `webviews/blocknote-spike/` project
+entirely — closing this one rather than continuing to evolve it, since
+the real integration is a clean rebuild, not an extension of the spike's
+"just display it" scope.
+
 ## Goal
 
 Evaluate [BlockNote](https://github.com/TypeCellOS/BlockNote) — a
