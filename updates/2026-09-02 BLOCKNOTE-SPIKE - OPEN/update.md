@@ -52,8 +52,14 @@ embedding it even straightforward.
 
 ## Findings so far
 
-- Embedding is straightforward: `WKWebView.loadFileURL` loads the bundled
-  `index.html` directly from app resources, no server needed.
+- Embedding needs a custom `WKURLSchemeHandler`, not
+  `WKWebView.loadFileURL`. WebKit refuses to load `<script
+  type="module">` (what Vite's build output always uses) over `file://`
+  — there's no origin for it to key CORS off of, so the page loaded but
+  the module script silently failed, leaving a blank white window with
+  no visible error. Fixed with `BlockNoteSchemeHandler`, which serves the
+  bundled files over a custom `classroom-blocknote://` scheme instead —
+  still fully local/offline, just with a real origin WebKit accepts.
 - **Bundle size is real**: the default BlockNote setup (via
   `@blocknote/mantine`) pulls in Shiki syntax highlighting for code
   blocks, which alone accounts for the bulk of a ~12 MB / ~317-file
