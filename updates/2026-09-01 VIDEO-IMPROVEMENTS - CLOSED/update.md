@@ -127,5 +127,5 @@ see `updates/2026-09-01 TIMELINE-SCRUBBER - BACKLOG/update.md`.
 - Added `ThumbnailServiceTests` covering `sampleTimes` spacing/bounds.
 - Manual (in-app, by the user): confirmed the transport bar renders and
   the ±15s skip / scrubber / time labels work against a real lesson
-  video, including the audio-only bar. Full-screen and pop-out still
-  need a manual pass before closing this update.
+  video, including the audio-only bar. Full-screen and pop-out
+  confirmed working manually by the user (2026-09-02) — closing.
