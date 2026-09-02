@@ -1,5 +1,16 @@
 # Notes / Page Split
 
+## Closing summary (2026-09-02)
+
+All five scope items shipped and were manually verified by the user.
+Verdict on the Obsidian-style formatting polish (§5): "not great, but
+okay enough to close" — Page/Notes split, split view, and timenotes all
+verified working well; the rich-text formatting shortcuts (Cmd-B/I/U
+stacking, in particular) are functional but not polished, with the known
+triple-stacking limitation documented below left unresolved by design
+(regex-based styling, not a real nested parser — would need a rewrite to
+fully fix). Revisit if a proper rich-text editor is adopted later.
+
 ## Progress
 
 - **Shipped:** §1 (file split), §2 (edit-mode gating), §3 (top selector +
