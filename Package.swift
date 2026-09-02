@@ -30,7 +30,8 @@ let package = Package(
             dependencies: ["ClassroomCore"],
             resources: [
                 .copy("Resources/classroom-icon.png"),
-                .copy("Resources/classroom-wordmark.png")
+                .copy("Resources/classroom-wordmark.png"),
+                .copy("Resources/BlockNoteSpike")
             ]
         ),
         .executableTarget(

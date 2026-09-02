@@ -127,6 +127,13 @@ scripts/create-launcher-app.sh
 - `docs/` — phase-by-phase scope and verification checklists.
 - `updates/` — dated update folders tracking what shipped and why (see
   `CLAUDE.md` for the workflow).
+- `webviews/` — standalone Node/npm web projects whose static build
+  output gets bundled as app resources (currently just
+  `blocknote-spike/`, a dev-only evaluation window — see
+  `updates/2026-09-02 BLOCKNOTE-SPIKE - OPEN/update.md`). `swift build`
+  never needs Node; only editing a `webviews/*` project does, via its
+  own `scripts/build-*.sh` to refresh the bundled copy under
+  `Sources/ClassroomApp/Resources/`.
 
 ## Working on this repo
 

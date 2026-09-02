@@ -3,3 +3,6 @@
 *.app/
 *.xcuserdata/
 DerivedData/
+webviews/*/node_modules/
+webviews/*/dist/
+webviews/*/*.tsbuildinfo
