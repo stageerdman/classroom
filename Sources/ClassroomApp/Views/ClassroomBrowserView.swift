@@ -17,6 +17,7 @@ struct ClassroomBrowserView: View {
     @State private var isTargetedHero = false
     @State private var isTargetedNotes = false
     @State private var isTargetedAttachments = false
+    @State private var noteFocusRequest = 0
     @State private var openMarkdownFileURL: URL?
 
     var body: some View {
@@ -136,7 +137,14 @@ struct ClassroomBrowserView: View {
                         case .page:
                             PageEditorView(viewModel: viewModel, editorHeight: $pageEditorHeight, onTextChange: schedulePageAutosave)
                         case .notes:
-                            NotesEditorView(viewModel: viewModel, editorHeight: $noteEditorHeight, isTargeted: $isTargetedNotes, onTextChange: scheduleNoteAutosave)
+                            NotesEditorView(
+                                viewModel: viewModel,
+                                playbackService: playbackService,
+                                editorHeight: $noteEditorHeight,
+                                isTargeted: $isTargetedNotes,
+                                focusRequest: noteFocusRequest,
+                                onTextChange: scheduleNoteAutosave
+                            )
                         }
                     }
 
@@ -182,7 +190,8 @@ struct ClassroomBrowserView: View {
                         onToggleFullScreen: presentFullScreenPlayer,
                         showsFullScreenButton: false,
                         showsPopoutButton: false,
-                        looksLikeOverlay: false
+                        looksLikeOverlay: false,
+                        onInsertTimenote: insertTimenoteAtCurrentPlaybackPosition
                     )
                 } else if isPoppedOut {
                     poppedOutPlaceholder
@@ -195,7 +204,8 @@ struct ClassroomBrowserView: View {
                             thumbnailProvider: thumbnailProvider,
                             isFullScreen: false,
                             onToggleFullScreen: presentFullScreenPlayer,
-                            onTogglePopout: presentPopoutPlayer
+                            onTogglePopout: presentPopoutPlayer,
+                            onInsertTimenote: insertTimenoteAtCurrentPlaybackPosition
                         )
                         .padding(12)
                     }
@@ -431,6 +441,11 @@ struct ClassroomBrowserView: View {
             }
             viewModel.saveSelectedNoteIfNeeded()
         }
+    }
+
+    private func insertTimenoteAtCurrentPlaybackPosition() {
+        viewModel.insertTimenoteForSelectedLesson(atSeconds: playbackService.currentTimeSeconds)
+        noteFocusRequest += 1
     }
 
     private func schedulePageAutosave() {

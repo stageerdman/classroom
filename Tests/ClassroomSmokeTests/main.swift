@@ -472,6 +472,30 @@ expect(didFailToSaveLockedNote, "Saving into an unwritable notes directory shoul
 let preservedNoteText = try String(contentsOf: preservedNoteURL, encoding: .utf8)
 expect(preservedNoteText == "Original", "Failed atomic save should preserve the previous note")
 
+// MARK: - Timenotes and content section selection
+
+await MainActor.run {
+    expect(notesViewModel.selectedContentSections == [.page], "Page should be the default selected content section")
+
+    notesViewModel.toggleContentSection(.notes)
+    expect(notesViewModel.selectedContentSections == [.page, .notes], "Selecting a second section should create a split view")
+
+    notesViewModel.toggleContentSection(.page)
+    expect(notesViewModel.selectedContentSections == [.notes], "Deselecting one of two sections should leave the other")
+
+    notesViewModel.toggleContentSection(.notes)
+    expect(notesViewModel.selectedContentSections == [.notes], "Deselecting the only selected section should be a no-op")
+
+    notesViewModel.toggleContentSection(.page)
+    notesViewModel.toggleContentSection(.notes)
+    expect(notesViewModel.selectedContentSections == [.page], "Setup: only Page should be visible before the insertion test below")
+
+    notesViewModel.updateNoteText("")
+    notesViewModel.insertTimenoteForSelectedLesson(atSeconds: 65.25)
+    expect(notesViewModel.noteText == "> [!timenote 00:01:05.250] ", "Inserting a timenote should append its line prefix to Notes")
+    expect(notesViewModel.selectedContentSections.contains(.notes), "Inserting a timenote should ensure Notes is visible even if it wasn't before")
+}
+
 // MARK: - Ordering: saved order keyed by lesson folder name
 
 let orderingRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)

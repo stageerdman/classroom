@@ -886,6 +886,29 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         saveSelectedNoteExplicitly()
     }
 
+    /// Inserts a new timenote line at the end of Notes and ensures Notes
+    /// is on screen. Leaves the cursor placement/focus to the caller (the
+    /// transport bar's comment button and the `/timenote` slash command
+    /// are the two entry points; the latter edits the text view directly
+    /// instead of going through here).
+    public func insertTimenoteForSelectedLesson(atSeconds seconds: Double) {
+        guard selectedLesson != nil else {
+            return
+        }
+
+        let separator = noteText.isEmpty || noteText.hasSuffix("\n") ? "" : "\n"
+        updateNoteText(noteText + separator + TimenoteFormat.linePrefix(timestampSeconds: seconds))
+        saveSelectedNoteExplicitly()
+        ensureContentSectionVisible(.notes)
+    }
+
+    public func ensureContentSectionVisible(_ section: LessonContentSection) {
+        guard !selectedContentSections.contains(section) else {
+            return
+        }
+        selectedContentSections = ContentSectionSelectionService.toggling(section, in: selectedContentSections)
+    }
+
     private func openResolvedURL(_ url: URL, shouldAddToRecent: Bool) {
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         defer {

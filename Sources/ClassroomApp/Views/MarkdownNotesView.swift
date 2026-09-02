@@ -1,4 +1,5 @@
 import AppKit
+import ClassroomCore
 import SwiftUI
 
 struct MarkdownNotesView: NSViewRepresentable {
@@ -9,6 +10,18 @@ struct MarkdownNotesView: NSViewRepresentable {
     /// — used for Page outside Module edit mode, where the content is
     /// meant to be read, not edited.
     var isEditable: Bool = true
+    /// Notion-style slash command: typing `/timenote` then Enter calls
+    /// this for the text to substitute in (a `TimenoteFormat.linePrefix`
+    /// built from the current playback position). `nil` disables the
+    /// slash command entirely — only the Notes editor wires this up.
+    var onTimenoteSlashCommand: (() -> String)?
+    /// Fires when a rendered timenote timestamp pill is clicked, with the
+    /// timestamp in seconds — the caller seeks playback to it.
+    var onTimenoteClick: ((Double) -> Void)?
+    /// Bumped by the caller to move focus into this editor and place the
+    /// cursor at the end — used after inserting a timenote from the
+    /// transport bar's comment button so the user can start typing.
+    var focusRequest: Int = 0
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -59,19 +72,38 @@ struct MarkdownNotesView: NSViewRepresentable {
             textView.isEditable = isEditable
         }
 
+        if context.coordinator.lastFocusRequest != focusRequest {
+            context.coordinator.lastFocusRequest = focusRequest
+            let endOfText = NSRange(location: (textView.string as NSString).length, length: 0)
+            textView.window?.makeFirstResponder(textView)
+            textView.setSelectedRange(endOfText)
+            textView.scrollRangeToVisible(endOfText)
+        }
+
+        context.coordinator.onTimenoteSlashCommand = onTimenoteSlashCommand
+        context.coordinator.onTimenoteClick = onTimenoteClick
+
         context.coordinator.updateContentHeight()
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, contentHeight: $contentHeight, onTextChange: onTextChange)
+        let coordinator = Coordinator(text: $text, contentHeight: $contentHeight, onTextChange: onTextChange)
+        coordinator.onTimenoteSlashCommand = onTimenoteSlashCommand
+        coordinator.onTimenoteClick = onTimenoteClick
+        return coordinator
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
+        static let timenoteURLScheme = "classroom-timenote"
+
         @Binding private var text: String
         @Binding private var contentHeight: CGFloat
         private let onTextChange: () -> Void
+        var onTimenoteSlashCommand: (() -> String)?
+        var onTimenoteClick: ((Double) -> Void)?
         weak var textView: NSTextView?
         private var isApplyingStyle = false
+        var lastFocusRequest = 0
 
         init(text: Binding<String>, contentHeight: Binding<CGFloat>, onTextChange: @escaping () -> Void) {
             _text = text
@@ -88,6 +120,46 @@ struct MarkdownNotesView: NSViewRepresentable {
             applyMarkdownStyle()
             updateContentHeight()
             onTextChange()
+        }
+
+        /// Notion-style `/timenote` + Enter: swaps the typed command for a
+        /// timenote line prefix and consumes the Enter keystroke (the
+        /// prefix's trailing space is where typing continues, on the same
+        /// line, rather than starting a new one).
+        func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
+            guard replacementString == "\n", let onTimenoteSlashCommand else {
+                return true
+            }
+
+            let nsText = textView.string as NSString
+            let lineRange = nsText.lineRange(for: NSRange(location: affectedCharRange.location, length: 0))
+            let lineBeforeCursor = nsText.substring(
+                with: NSRange(location: lineRange.location, length: affectedCharRange.location - lineRange.location)
+            )
+
+            guard lineBeforeCursor == "/timenote" else {
+                return true
+            }
+
+            let replacementRange = NSRange(location: lineRange.location, length: affectedCharRange.location - lineRange.location)
+            textView.insertText(onTimenoteSlashCommand(), replacementRange: replacementRange)
+            return false
+        }
+
+        /// Cmd-click (standard AppKit behavior for `.link`-attributed text)
+        /// on a rendered timenote pill seeks playback instead of the
+        /// default "open this URL" behavior.
+        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            guard
+                let url = link as? URL,
+                url.scheme == Self.timenoteURLScheme,
+                let seconds = Double(url.absoluteString.dropFirst(Self.timenoteURLScheme.count + 1))
+            else {
+                return false
+            }
+
+            onTimenoteClick?(seconds)
+            return true
         }
 
         private static let bodyFontSize: CGFloat = 15
@@ -172,6 +244,11 @@ struct MarkdownNotesView: NSViewRepresentable {
                 return
             }
 
+            if let (timestampSeconds, _) = TimenoteFormat.parseLine(line) {
+                styleTimenoteLine(timestampSeconds: timestampSeconds, in: lineRange, storage: storage)
+                return
+            }
+
             if line.hasPrefix("> ") {
                 applyMarker("> ", in: lineRange, storage: storage)
                 applyContent(
@@ -209,6 +286,39 @@ struct MarkdownNotesView: NSViewRepresentable {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.count >= 3, Set(["-", "*", "_"]).contains(where: { trimmed == String(repeating: $0, count: trimmed.count) }) {
                 storage.addAttributes([.font: NSFont.systemFont(ofSize: Self.bodyFontSize), .foregroundColor: NSColor.tertiaryLabelColor], range: lineRange)
+            }
+        }
+
+        /// `> [!timenote HH:MM:SS.mmm] text` — the callout header dims like
+        /// any other marker, except the timestamp itself, which renders as
+        /// a clickable pill (`.link` to a `classroom-timenote:` URL; see
+        /// `textView(_:clickedOnLink:at:)`).
+        @MainActor private func styleTimenoteLine(timestampSeconds: Double, in lineRange: NSRange, storage: NSTextStorage) {
+            let prefixText = TimenoteFormat.linePrefix(timestampSeconds: timestampSeconds)
+            let prefixLength = min(prefixText.utf16.count, lineRange.length)
+            let markerLength = min(TimenoteFormat.linePrefixMarker.utf16.count, prefixLength)
+            let closingLength = min(2, prefixLength - markerLength)
+
+            let markerRange = NSRange(location: lineRange.location, length: markerLength)
+            storage.addAttributes([.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor], range: markerRange)
+
+            let timestampRange = NSRange(location: lineRange.location + markerLength, length: max(0, prefixLength - markerLength - closingLength))
+            var pillAttributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold),
+                .foregroundColor: NSColor.controlAccentColor,
+                .backgroundColor: NSColor.controlAccentColor.withAlphaComponent(0.15)
+            ]
+            if let url = URL(string: "\(Self.timenoteURLScheme):\(timestampSeconds)") {
+                pillAttributes[.link] = url
+            }
+            storage.addAttributes(pillAttributes, range: timestampRange)
+
+            let closingRange = NSRange(location: lineRange.location + markerLength + timestampRange.length, length: closingLength)
+            storage.addAttributes([.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor], range: closingRange)
+
+            let contentRange = NSRange(location: lineRange.location + prefixLength, length: lineRange.length - prefixLength)
+            if contentRange.length > 0 {
+                storage.addAttributes([.font: NSFont.systemFont(ofSize: Self.bodyFontSize), .foregroundColor: NSColor.labelColor], range: contentRange)
             }
         }
 

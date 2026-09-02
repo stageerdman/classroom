@@ -5,8 +5,10 @@ import SwiftUI
 /// edit mode. Backed by `note.md` via `ClassroomBrowserViewModel`.
 struct NotesEditorView: View {
     @ObservedObject var viewModel: ClassroomBrowserViewModel
+    @ObservedObject var playbackService: PlaybackService
     @Binding var editorHeight: CGFloat
     @Binding var isTargeted: Bool
+    let focusRequest: Int
     let onTextChange: () -> Void
 
     var body: some View {
@@ -30,7 +32,10 @@ struct NotesEditorView: View {
                     set: { viewModel.updateNoteText($0) }
                 ),
                 contentHeight: $editorHeight,
-                onTextChange: onTextChange
+                onTextChange: onTextChange,
+                onTimenoteSlashCommand: { TimenoteFormat.linePrefix(timestampSeconds: playbackService.currentTimeSeconds) },
+                onTimenoteClick: { playbackService.seek(to: $0) },
+                focusRequest: focusRequest
             )
             .frame(minHeight: editorHeight, maxHeight: editorHeight)
             .overlay(

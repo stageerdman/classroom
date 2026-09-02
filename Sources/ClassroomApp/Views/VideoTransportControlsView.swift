@@ -28,6 +28,9 @@ struct VideoTransportControlsView: View {
     /// pane and should use normal system control colors instead.
     var looksLikeOverlay: Bool = true
 
+    /// Inserts a timenote in Notes at the current playback position.
+    var onInsertTimenote: () -> Void = {}
+
     @State private var imageCache = ThumbnailImageCache()
     @State private var wasPlayingBeforeScrub = false
 
@@ -75,6 +78,11 @@ struct VideoTransportControlsView: View {
                 Image(systemName: playbackService.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
             }
             .help(playbackService.isMuted ? "Unmute" : "Mute")
+
+            Button(action: onInsertTimenote) {
+                Image(systemName: "text.bubble")
+            }
+            .help("Add a timestamped note here")
 
             if showsPopoutButton {
                 Button(action: onTogglePopout) {

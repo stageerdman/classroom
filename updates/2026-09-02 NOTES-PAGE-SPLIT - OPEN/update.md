@@ -13,8 +13,21 @@
   `ContentSectionSelectionService`'s selection rules. `MarkdownNotesView`
   gained `isEditable`; `PageEditorView` uses it to stay read-only outside
   Module edit mode, `NotesEditorView` is always editable.
-- **Not yet started:** §4 (timestamped notes), §5 (Obsidian live-preview
-  editing — hidden syntax until focused, Cmd-B/I/U, `==highlight==`).
+- **Shipped:** §4 (timestamped notes). `TimenoteFormat`
+  (`ClassroomCore/Services`) encodes/parses `> [!timenote HH:MM:SS.mmm]
+  text` and formats/parses the `HH:MM:SS.mmm` timestamp itself.
+  `MarkdownNotesView` renders the timestamp as a clickable pill (`.link`
+  to a `classroom-timenote:<seconds>` URL, intercepted in
+  `textView(_:clickedOnLink:at:)`), supports the `/timenote` + Enter
+  slash command (`textView(_:shouldChangeTextIn:replacementString:)`
+  swaps the typed command for the line prefix in place), and exposes a
+  `focusRequest` counter so inserting a timenote from outside the text
+  view (the transport bar's new comment-icon button) can move focus/
+  cursor into Notes afterward. `ClassroomBrowserViewModel
+  .insertTimenoteForSelectedLesson(atSeconds:)` appends the line and
+  calls `ensureContentSectionVisible(.notes)`.
+- **Not yet started:** §5 (Obsidian live-preview editing — hidden syntax
+  until focused, Cmd-B/I/U, `==highlight==`).
 
 ## Goal
 
