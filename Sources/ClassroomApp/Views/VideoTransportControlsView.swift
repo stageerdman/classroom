@@ -31,6 +31,13 @@ struct VideoTransportControlsView: View {
     /// Inserts a timenote in Notes at the current playback position.
     var onInsertTimenote: () -> Void = {}
 
+    /// `true` while a Page/Notes text editor has keyboard focus — disables
+    /// the bare Left/Right arrow-key skip shortcuts below so arrow keys
+    /// navigate text instead of skipping playback. Space still toggles
+    /// play/pause regardless, matching normal player conventions (a
+    /// focused text editor would consume Space as a character anyway).
+    var disableArrowKeySkip: Bool = false
+
     @State private var imageCache = ThumbnailImageCache()
     @State private var wasPlayingBeforeScrub = false
 
@@ -46,16 +53,32 @@ struct VideoTransportControlsView: View {
             .keyboardShortcut(.space, modifiers: [])
             .help(playbackService.isPlaying ? "Pause" : "Play")
 
-            Button { playbackService.skipBackward() } label: {
-                Image(systemName: "gobackward.15")
+            Group {
+                if disableArrowKeySkip {
+                    Button { playbackService.skipBackward() } label: {
+                        Image(systemName: "gobackward.15")
+                    }
+                } else {
+                    Button { playbackService.skipBackward() } label: {
+                        Image(systemName: "gobackward.15")
+                    }
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+                }
             }
-            .keyboardShortcut(.leftArrow, modifiers: [])
             .help("Back 15 seconds")
 
-            Button { playbackService.skipForward() } label: {
-                Image(systemName: "goforward.15")
+            Group {
+                if disableArrowKeySkip {
+                    Button { playbackService.skipForward() } label: {
+                        Image(systemName: "goforward.15")
+                    }
+                } else {
+                    Button { playbackService.skipForward() } label: {
+                        Image(systemName: "goforward.15")
+                    }
+                    .keyboardShortcut(.rightArrow, modifiers: [])
+                }
             }
-            .keyboardShortcut(.rightArrow, modifiers: [])
             .help("Forward 15 seconds")
 
             Text(formatPlaybackTime(playbackService.currentTimeSeconds))

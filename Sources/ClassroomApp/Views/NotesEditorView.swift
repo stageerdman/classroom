@@ -10,6 +10,7 @@ struct NotesEditorView: View {
     @Binding var isTargeted: Bool
     let focusRequest: Int
     let onTextChange: () -> Void
+    var onFocusChange: (Bool) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -35,7 +36,8 @@ struct NotesEditorView: View {
                 onTextChange: onTextChange,
                 onTimenoteSlashCommand: { TimenoteFormat.linePrefix(timestampSeconds: playbackService.currentTimeSeconds) },
                 onTimenoteClick: { playbackService.seek(to: $0) },
-                focusRequest: focusRequest
+                focusRequest: focusRequest,
+                onFocusChange: onFocusChange
             )
             .frame(minHeight: editorHeight, maxHeight: editorHeight)
             .overlay(

@@ -22,6 +22,11 @@ struct MarkdownNotesView: NSViewRepresentable {
     /// cursor at the end — used after inserting a timenote from the
     /// transport bar's comment button so the user can start typing.
     var focusRequest: Int = 0
+    /// Fires when this editor becomes/resigns first responder — the
+    /// caller uses this to disable the video transport bar's arrow-key
+    /// skip shortcuts while text is focused, so arrow keys navigate text
+    /// instead of skipping playback.
+    var onFocusChange: ((Bool) -> Void)?
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -34,6 +39,9 @@ struct MarkdownNotesView: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.onFormatShortcut = { [weak coordinator = context.coordinator] shortcut in
             coordinator?.applyFormatShortcut(shortcut) ?? false
+        }
+        textView.onFocusChange = { [weak coordinator = context.coordinator] isFocused in
+            coordinator?.onFocusChange?(isFocused)
         }
         textView.isRichText = false
         textView.isAutomaticLinkDetectionEnabled = true
@@ -85,6 +93,7 @@ struct MarkdownNotesView: NSViewRepresentable {
 
         context.coordinator.onTimenoteSlashCommand = onTimenoteSlashCommand
         context.coordinator.onTimenoteClick = onTimenoteClick
+        context.coordinator.onFocusChange = onFocusChange
 
         context.coordinator.updateContentHeight()
     }
@@ -93,6 +102,7 @@ struct MarkdownNotesView: NSViewRepresentable {
         let coordinator = Coordinator(text: $text, contentHeight: $contentHeight, onTextChange: onTextChange)
         coordinator.onTimenoteSlashCommand = onTimenoteSlashCommand
         coordinator.onTimenoteClick = onTimenoteClick
+        coordinator.onFocusChange = onFocusChange
         return coordinator
     }
 
@@ -104,6 +114,7 @@ struct MarkdownNotesView: NSViewRepresentable {
         private let onTextChange: () -> Void
         var onTimenoteSlashCommand: (() -> String)?
         var onTimenoteClick: ((Double) -> Void)?
+        var onFocusChange: ((Bool) -> Void)?
         weak var textView: NSTextView?
         private var isApplyingStyle = false
         var lastFocusRequest = 0
@@ -187,11 +198,16 @@ struct MarkdownNotesView: NSViewRepresentable {
             let markerLength = marker.utf16.count
 
             // Toggle off: the markers are the first/last characters of the
-            // selection itself.
+            // selection itself. The boundary checks guard against bold
+            // ("**") and italic ("*") sharing a character — e.g. selecting
+            // "word" inside "***word***" (bold+italic stacked) must not
+            // mistake either outer "*" for the *other* marker's delimiter.
             if selectedRange.length >= markerLength * 2 {
                 let leadingRange = NSRange(location: selectedRange.location, length: markerLength)
                 let trailingRange = NSRange(location: NSMaxRange(selectedRange) - markerLength, length: markerLength)
-                if nsText.substring(with: leadingRange) == marker, nsText.substring(with: trailingRange) == marker {
+                if nsText.substring(with: leadingRange) == marker, nsText.substring(with: trailingRange) == marker,
+                   !Self.isMarkerCharacter(at: selectedRange.location - 1, matching: marker, in: nsText),
+                   !Self.isMarkerCharacter(at: NSMaxRange(selectedRange), matching: marker, in: nsText) {
                     let innerText = nsText.substring(with: NSRange(location: leadingRange.location + markerLength, length: selectedRange.length - markerLength * 2))
                     textView.insertText(innerText, replacementRange: selectedRange)
                     textView.setSelectedRange(NSRange(location: selectedRange.location, length: innerText.utf16.count))
@@ -203,7 +219,9 @@ struct MarkdownNotesView: NSViewRepresentable {
             let beforeRange = NSRange(location: selectedRange.location - markerLength, length: markerLength)
             let afterRange = NSRange(location: NSMaxRange(selectedRange), length: markerLength)
             if beforeRange.location >= 0, NSMaxRange(afterRange) <= nsText.length,
-               nsText.substring(with: beforeRange) == marker, nsText.substring(with: afterRange) == marker {
+               nsText.substring(with: beforeRange) == marker, nsText.substring(with: afterRange) == marker,
+               !Self.isMarkerCharacter(at: beforeRange.location - 1, matching: marker, in: nsText),
+               !Self.isMarkerCharacter(at: NSMaxRange(afterRange), matching: marker, in: nsText) {
                 let combinedRange = NSRange(location: beforeRange.location, length: markerLength + selectedRange.length + markerLength)
                 let innerText = nsText.substring(with: selectedRange)
                 textView.insertText(innerText, replacementRange: combinedRange)
@@ -253,16 +271,29 @@ struct MarkdownNotesView: NSViewRepresentable {
             // live-preview behavior.
             let focusedLineRange = nsText.lineRange(for: selectedRange)
 
-            nsText.enumerateSubstrings(in: fullRange, options: [.byLines, .substringNotRequired]) { _, lineRange, _, _ in
+            // Collected so the inline passes below (bold/italic/code/
+            // highlight/links) can skip header lines entirely — those
+            // already got their whole-line font size from `styleLine`,
+            // and a regex match for e.g. `**bold**` inside a header would
+            // otherwise stomp that back down to normal body size for just
+            // the matched substring.
+            var headerLineRanges: [NSRange] = []
+
+            nsText.enumerateSubstrings(in: fullRange, options: [.byLines, .substringNotRequired]) { substring, lineRange, _, _ in
                 let isFocused = Self.isLineFocused(lineRange, focusedLineRange: focusedLineRange)
-                self.styleLine(nsText.substring(with: lineRange), in: lineRange, storage: storage, isFocused: isFocused)
+                let line = substring ?? nsText.substring(with: lineRange)
+                if Self.headerMarkers.contains(where: { line.hasPrefix($0.0) }) {
+                    headerLineRanges.append(lineRange)
+                }
+                self.styleLine(line, in: lineRange, storage: storage, isFocused: isFocused)
             }
 
             applyDelimitedInlineStyle(
                 pattern: "\\*\\*([^*]+)\\*\\*",
                 contentGroup: 1,
                 contentAttributes: [.font: NSFont.boldSystemFont(ofSize: Self.bodyFontSize), .foregroundColor: NSColor.labelColor],
-                focusedLineRange: focusedLineRange
+                focusedLineRange: focusedLineRange,
+                excludedRanges: headerLineRanges
             )
             applyDelimitedInlineStyle(
                 pattern: "(?<!\\*)\\*([^*]+)\\*(?!\\*)",
@@ -271,7 +302,8 @@ struct MarkdownNotesView: NSViewRepresentable {
                     .font: NSFontManager.shared.convert(.systemFont(ofSize: Self.bodyFontSize), toHaveTrait: .italicFontMask),
                     .foregroundColor: NSColor.labelColor
                 ],
-                focusedLineRange: focusedLineRange
+                focusedLineRange: focusedLineRange,
+                excludedRanges: headerLineRanges
             )
             applyDelimitedInlineStyle(
                 pattern: "`([^`]+)`",
@@ -281,7 +313,8 @@ struct MarkdownNotesView: NSViewRepresentable {
                     .foregroundColor: NSColor.labelColor,
                     .backgroundColor: NSColor.textBackgroundColor.blended(withFraction: 0.5, of: .secondaryLabelColor) ?? NSColor.textBackgroundColor
                 ],
-                focusedLineRange: focusedLineRange
+                focusedLineRange: focusedLineRange,
+                excludedRanges: headerLineRanges
             )
             applyDelimitedInlineStyle(
                 pattern: "==([^=]+)==",
@@ -291,9 +324,10 @@ struct MarkdownNotesView: NSViewRepresentable {
                     .foregroundColor: NSColor.labelColor,
                     .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.35)
                 ],
-                focusedLineRange: focusedLineRange
+                focusedLineRange: focusedLineRange,
+                excludedRanges: headerLineRanges
             )
-            applyLinkStyle(focusedLineRange: focusedLineRange)
+            applyLinkStyle(focusedLineRange: focusedLineRange, excludedRanges: headerLineRanges)
 
             storage?.endEditing()
             textView.setSelectedRange(selectedRange)
@@ -304,6 +338,18 @@ struct MarkdownNotesView: NSViewRepresentable {
         /// so its bounds already align with paragraph boundaries) falls
         /// inside `focusedLineRange` (the whole-line span touching the
         /// current selection, from `NSString.lineRange(for:)`).
+        /// `true` if the character at `index` equals `marker`'s (repeated)
+        /// character — used to tell a standalone marker apart from one
+        /// character within a longer run of the same character (so a lone
+        /// `*` found next to a selection isn't mistaken for one of the two
+        /// stars in a `**` that happens to sit right next to it).
+        private static func isMarkerCharacter(at index: Int, matching marker: String, in nsText: NSString) -> Bool {
+            guard index >= 0, index < nsText.length, let markerCharacter = marker.first else {
+                return false
+            }
+            return nsText.substring(with: NSRange(location: index, length: 1)) == String(markerCharacter)
+        }
+
         private static func isLineFocused(_ lineRange: NSRange, focusedLineRange: NSRange) -> Bool {
             lineRange.location >= focusedLineRange.location
                 && lineRange.location < focusedLineRange.location + max(focusedLineRange.length, 1)
@@ -448,7 +494,7 @@ struct MarkdownNotesView: NSViewRepresentable {
         /// (Cmd-click, standard AppKit behavior for `.link`-attributed
         /// text); the brackets/parens/URL portion is dimmed like every
         /// other marker.
-        @MainActor private func applyLinkStyle(focusedLineRange: NSRange) {
+        @MainActor private func applyLinkStyle(focusedLineRange: NSRange, excludedRanges: [NSRange]) {
             guard let textView, let storage = textView.textStorage else {
                 return
             }
@@ -460,6 +506,10 @@ struct MarkdownNotesView: NSViewRepresentable {
 
             let nsText = textView.string as NSString
             for match in regex.matches(in: textView.string, range: fullRange) {
+                if Self.rangeOverlapsAny(match.range, excludedRanges) {
+                    continue
+                }
+
                 let textRange = match.range(at: 1)
                 let urlRange = match.range(at: 2)
                 guard textRange.location != NSNotFound, urlRange.location != NSNotFound else {
@@ -512,7 +562,8 @@ struct MarkdownNotesView: NSViewRepresentable {
             pattern: String,
             contentGroup: Int,
             contentAttributes: [NSAttributedString.Key: Any],
-            focusedLineRange: NSRange
+            focusedLineRange: NSRange,
+            excludedRanges: [NSRange]
         ) {
             guard let textView, let storage = textView.textStorage else {
                 return
@@ -524,6 +575,10 @@ struct MarkdownNotesView: NSViewRepresentable {
             }
 
             for match in regex.matches(in: textView.string, range: fullRange) {
+                if Self.rangeOverlapsAny(match.range, excludedRanges) {
+                    continue
+                }
+
                 let isFocused = Self.isRangeFocused(match.range, focusedLineRange: focusedLineRange)
                 storage.addAttributes(Self.markerAttributes(isFocused: isFocused), range: match.range)
 
@@ -532,6 +587,14 @@ struct MarkdownNotesView: NSViewRepresentable {
                     storage.addAttributes(contentAttributes, range: contentRange)
                 }
             }
+        }
+
+        /// `true` if `range` overlaps any of `excludedRanges` — used to
+        /// keep header lines' whole-line font size from being overwritten
+        /// by an inline match (bold/italic/code/highlight/link) that
+        /// happens to fall inside one.
+        private static func rangeOverlapsAny(_ range: NSRange, _ excludedRanges: [NSRange]) -> Bool {
+            excludedRanges.contains { NSMaxRange(range) > $0.location && range.location < NSMaxRange($0) }
         }
     }
 }

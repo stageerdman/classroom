@@ -7,6 +7,7 @@ struct PageEditorView: View {
     @ObservedObject var viewModel: ClassroomBrowserViewModel
     @Binding var editorHeight: CGFloat
     let onTextChange: () -> Void
+    var onFocusChange: (Bool) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -30,7 +31,8 @@ struct PageEditorView: View {
                 ),
                 contentHeight: $editorHeight,
                 onTextChange: onTextChange,
-                isEditable: viewModel.isEditingModule
+                isEditable: viewModel.isEditingModule,
+                onFocusChange: onFocusChange
             )
             .frame(minHeight: editorHeight, maxHeight: editorHeight)
 

@@ -40,6 +40,40 @@
 - All five scope items are now shipped; remaining work before closing is
   manual verification (see below) and the documentation pass.
 
+## Post-review fixes
+
+First manual verification pass (2026-09-02) found three issues, all fixed:
+
+- **Arrow keys skipped video instead of moving the text cursor** while a
+  Page/Notes editor was focused. The transport bar's unmodified Left/
+  Right arrow shortcuts (`VideoTransportControlsView`) won the
+  `performKeyEquivalent` race against `NSTextView`'s normal cursor
+  navigation regardless of first responder. Fixed by tracking editor
+  focus (`MarkdownTextView.onFocusChange`, threaded up through
+  `MarkdownNotesView` → `PageEditorView`/`NotesEditorView` →
+  `ClassroomBrowserView`) and disabling those two shortcuts entirely
+  while a text editor has focus (`VideoTransportControlsView
+  .disableArrowKeySkip`).
+- **Stacking Cmd-B/I/U on the same word broke formatting** — bold (`**`)
+  and italic (`*`) share a character, so after bolding a word, applying
+  italic to the same (reselected) word saw the adjacent `*` from the
+  `**` pair and misidentified it as a standalone italic marker to strip,
+  corrupting the bold markup instead of combining the two. Fixed by
+  requiring a marker's neighboring character (one further out) *not* be
+  the same character before treating it as a clean, standalone delimiter
+  (`Coordinator.isMarkerCharacter(at:matching:in:)`); stacking now
+  correctly produces `***word***`-style combined markup.
+- **Bolding/italicizing text inside a header line shrank it back to
+  normal body size** — the inline bold/italic/code/highlight styling
+  pass ran after (and overwrote) the header's whole-line font, since it
+  matches by regex across the whole document rather than per line.
+  Fixed by collecting header line ranges during the line-by-line pass
+  and skipping any inline match that overlaps one, so a header's font
+  size is never overwritten. Trade-off: `**`/`*`/etc. markers *inside* a
+  header line no longer get the hide-until-focused treatment (they stay
+  visible at the header's size/color) — an edge case (bolding text
+  within a heading) traded for fixing the more disruptive font-collapse.
+
 ## Goal
 
 Split the lesson pane's single "Notes" section into two distinct sections —

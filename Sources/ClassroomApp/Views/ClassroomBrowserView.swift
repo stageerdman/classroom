@@ -18,6 +18,7 @@ struct ClassroomBrowserView: View {
     @State private var isTargetedNotes = false
     @State private var isTargetedAttachments = false
     @State private var noteFocusRequest = 0
+    @State private var isTextEditorFocused = false
     @State private var openMarkdownFileURL: URL?
 
     var body: some View {
@@ -135,7 +136,12 @@ struct ClassroomBrowserView: View {
                     LessonContentPane(sections: viewModel.selectedContentSections) { section in
                         switch section {
                         case .page:
-                            PageEditorView(viewModel: viewModel, editorHeight: $pageEditorHeight, onTextChange: schedulePageAutosave)
+                            PageEditorView(
+                                viewModel: viewModel,
+                                editorHeight: $pageEditorHeight,
+                                onTextChange: schedulePageAutosave,
+                                onFocusChange: { isTextEditorFocused = $0 }
+                            )
                         case .notes:
                             NotesEditorView(
                                 viewModel: viewModel,
@@ -143,7 +149,8 @@ struct ClassroomBrowserView: View {
                                 editorHeight: $noteEditorHeight,
                                 isTargeted: $isTargetedNotes,
                                 focusRequest: noteFocusRequest,
-                                onTextChange: scheduleNoteAutosave
+                                onTextChange: scheduleNoteAutosave,
+                                onFocusChange: { isTextEditorFocused = $0 }
                             )
                         }
                     }
@@ -191,7 +198,8 @@ struct ClassroomBrowserView: View {
                         showsFullScreenButton: false,
                         showsPopoutButton: false,
                         looksLikeOverlay: false,
-                        onInsertTimenote: insertTimenoteAtCurrentPlaybackPosition
+                        onInsertTimenote: insertTimenoteAtCurrentPlaybackPosition,
+                        disableArrowKeySkip: isTextEditorFocused
                     )
                 } else if isPoppedOut {
                     poppedOutPlaceholder
@@ -205,7 +213,8 @@ struct ClassroomBrowserView: View {
                             isFullScreen: false,
                             onToggleFullScreen: presentFullScreenPlayer,
                             onTogglePopout: presentPopoutPlayer,
-                            onInsertTimenote: insertTimenoteAtCurrentPlaybackPosition
+                            onInsertTimenote: insertTimenoteAtCurrentPlaybackPosition,
+                            disableArrowKeySkip: isTextEditorFocused
                         )
                         .padding(12)
                     }
