@@ -74,6 +74,33 @@ First manual verification pass (2026-09-02) found three issues, all fixed:
   visible at the header's size/color) — an edge case (bolding text
   within a heading) traded for fixing the more disruptive font-collapse.
 
+Second pass (same day) found the arrow-key and header fixes held, but
+stacking still broke — root cause was different from what the marker-
+boundary fix above addressed:
+
+- **Underline (`__text__`) had no visual rendering at all.** Cmd-U
+  correctly inserted the `__` markup, but no styling pass recognized it,
+  so `applyMarkdownStyle` never touched it directly — it just fell
+  through to whatever *other* pattern's regex happened to also match
+  across it (italic's `[^*]+` content class doesn't exclude
+  underscores, so it silently swallowed an entire `__text__` span as
+  plain italic content). Stacking bold → italic → underline on a word
+  landed on this exact case: the underline step never ran, so the
+  visible result reflected only whichever pattern won the swallow.
+  Fixed with a dedicated `applyUnderlineStyle` pass — deliberately the
+  only inline pass that touches *just* `.underlineStyle` and never
+  font/color, so it composes with an overlapping bold/italic/code match
+  instead of overwriting it, regardless of pass order.
+- Remaining known limitation: bold **and** italic **and** underline all
+  at once on the same word may still not render with all three traits
+  visible simultaneously, because italic's regex requires asterisk-free
+  content and therefore can't match when bold's `**` is nested inside
+  it — a real limitation of independent regex passes rather than a
+  proper nested parser. Pairwise combinations (any two of bold/italic/
+  underline) render correctly; the underlying markdown text is always
+  valid regardless. A full fix would mean replacing the regex passes
+  with a real recursive tokenizer — out of scope here unless requested.
+
 ## Goal
 
 Split the lesson pane's single "Notes" section into two distinct sections —

@@ -316,6 +316,13 @@ struct MarkdownNotesView: NSViewRepresentable {
                 focusedLineRange: focusedLineRange,
                 excludedRanges: headerLineRanges
             )
+            // Underline (`__text__`, what Cmd-U inserts — CommonMark has no
+            // native syntax for it) — a dedicated pass, not the generic
+            // delimited-style helper above, because it must never touch
+            // the content's font/color (only `.underlineStyle`), so it
+            // composes with whatever bold/italic/code already styled the
+            // same text instead of overwriting it, regardless of order.
+            applyUnderlineStyle(focusedLineRange: focusedLineRange, excludedRanges: headerLineRanges)
             applyDelimitedInlineStyle(
                 pattern: "==([^=]+)==",
                 contentGroup: 1,
@@ -551,6 +558,41 @@ struct MarkdownNotesView: NSViewRepresentable {
             }
 
             textView.frame.size.height = measuredHeight
+        }
+
+        /// `__text__` — unlike the other delimited constructs, only the
+        /// `__` marker characters get dimmed; the content's font/color is
+        /// left completely alone (only `.underlineStyle` is added), so
+        /// underline composes with an overlapping bold/italic/code match
+        /// instead of overwriting it.
+        @MainActor private func applyUnderlineStyle(focusedLineRange: NSRange, excludedRanges: [NSRange]) {
+            guard let textView, let storage = textView.textStorage else {
+                return
+            }
+
+            let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
+            guard let regex = try? NSRegularExpression(pattern: "__([^_]+)__") else {
+                return
+            }
+
+            for match in regex.matches(in: textView.string, range: fullRange) {
+                if Self.rangeOverlapsAny(match.range, excludedRanges) {
+                    continue
+                }
+
+                let contentRange = match.range(at: 1)
+                guard contentRange.location != NSNotFound else {
+                    continue
+                }
+
+                let isFocused = Self.isRangeFocused(match.range, focusedLineRange: focusedLineRange)
+                let leadingMarkerRange = NSRange(location: match.range.location, length: contentRange.location - match.range.location)
+                let trailingMarkerRange = NSRange(location: NSMaxRange(contentRange), length: NSMaxRange(match.range) - NSMaxRange(contentRange))
+
+                storage.addAttributes(Self.markerAttributes(isFocused: isFocused), range: leadingMarkerRange)
+                storage.addAttributes(Self.markerAttributes(isFocused: isFocused), range: trailingMarkerRange)
+                storage.addAttributes([.underlineStyle: NSUnderlineStyle.single.rawValue], range: contentRange)
+            }
         }
 
         /// A `marker CONTENT marker`-shaped inline construct (bold, italic,
