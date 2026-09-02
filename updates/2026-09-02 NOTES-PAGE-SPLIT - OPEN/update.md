@@ -26,8 +26,19 @@
   cursor into Notes afterward. `ClassroomBrowserViewModel
   .insertTimenoteForSelectedLesson(atSeconds:)` appends the line and
   calls `ensureContentSectionVisible(.notes)`.
-- **Not yet started:** §5 (Obsidian live-preview editing — hidden syntax
-  until focused, Cmd-B/I/U, `==highlight==`).
+- **Shipped:** §5 (Obsidian live-preview editing). `MarkdownNotesView`'s
+  styling pass now takes the cursor/selection's line span into account:
+  markdown syntax markers (`#`, `**`, `*`, `` ` ``, `>`, `> [!timenote
+  ...]`, list bullets, `==`) render at normal small-dimmed size only on
+  the line currently being edited; everywhere else they're shrunk to
+  near-zero size and made transparent (`markerAttributes(isFocused:)`)
+  so only the styled content shows. `==highlighted text==` renders with
+  a yellow background via the same delimited-inline-style machinery as
+  bold/italic/code. `MarkdownTextView` (a small `NSTextView` subclass)
+  intercepts Cmd-B/I/U and wraps/unwraps the current selection with
+  `**`/`*`/`<u>...</u>` respectively (toggles off if already wrapped).
+- All five scope items are now shipped; remaining work before closing is
+  manual verification (see below) and the documentation pass.
 
 ## Goal
 
@@ -177,15 +188,20 @@ every line rather than only the line being edited.
 
 ## Decisions still open (resolve during implementation)
 
-- Exact mechanics of "hide syntax until line is focused" in `NSTextView`
-  — likely collapsing marker characters to near-zero width / transparent
-  rather than literally removing them from the text storage, so undo and
-  the underlying markdown text stay simple. Needs a prototype before
-  committing to an approach.
 - Whether split view panes are independently scrollable or share one
-  scroll position.
+  scroll position — currently they share one, since both panes live in
+  the same outer `ScrollView` in `ClassroomBrowserView.detail`.
 - Behavior when a third selectable category exists and two are already
   selected (no third category ships in this update, so deferred).
+
+## Resolved during implementation
+
+- "Hide syntax until line is focused" landed as: marker characters keep
+  their normal small-dimmed styling on the line touching the
+  cursor/selection, and shrink to a near-zero-size, transparent font
+  everywhere else (`MarkdownNotesView.Coordinator.markerAttributes
+  (isFocused:)`) — they stay in the text storage (so undo and the
+  underlying markdown text stay simple), just rendered invisible.
 
 ## Out of scope (backlog)
 

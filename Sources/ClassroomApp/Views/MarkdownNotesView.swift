@@ -30,8 +30,11 @@ struct MarkdownNotesView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
 
-        let textView = NSTextView()
+        let textView = MarkdownTextView()
         textView.delegate = context.coordinator
+        textView.onFormatShortcut = { [weak coordinator = context.coordinator] shortcut in
+            coordinator?.applyFormatShortcut(shortcut) ?? false
+        }
         textView.isRichText = false
         textView.isAutomaticLinkDetectionEnabled = true
         textView.isAutomaticDashSubstitutionEnabled = true
@@ -162,6 +165,60 @@ struct MarkdownNotesView: NSViewRepresentable {
             return true
         }
 
+        /// Cmd-B/I/U: wraps the current selection in the matching markdown
+        /// marker (or unwraps it, if the selection is already wrapped),
+        /// mirroring standard macOS text-editing shortcuts. Underline has
+        /// no CommonMark syntax, so it uses inline HTML (`<u>...</u>`),
+        /// which markdown renderers pass through untouched.
+        @MainActor func applyFormatShortcut(_ shortcut: MarkdownTextView.FormatShortcut) -> Bool {
+            guard let textView, textView.isEditable else {
+                return false
+            }
+
+            let marker: String
+            switch shortcut {
+            case .bold: marker = "**"
+            case .italic: marker = "*"
+            case .underline: marker = "__"
+            }
+
+            let nsText = textView.string as NSString
+            let selectedRange = textView.selectedRange()
+            let markerLength = marker.utf16.count
+
+            // Toggle off: the markers are the first/last characters of the
+            // selection itself.
+            if selectedRange.length >= markerLength * 2 {
+                let leadingRange = NSRange(location: selectedRange.location, length: markerLength)
+                let trailingRange = NSRange(location: NSMaxRange(selectedRange) - markerLength, length: markerLength)
+                if nsText.substring(with: leadingRange) == marker, nsText.substring(with: trailingRange) == marker {
+                    let innerText = nsText.substring(with: NSRange(location: leadingRange.location + markerLength, length: selectedRange.length - markerLength * 2))
+                    textView.insertText(innerText, replacementRange: selectedRange)
+                    textView.setSelectedRange(NSRange(location: selectedRange.location, length: innerText.utf16.count))
+                    return true
+                }
+            }
+
+            // Toggle off: the markers immediately surround the selection.
+            let beforeRange = NSRange(location: selectedRange.location - markerLength, length: markerLength)
+            let afterRange = NSRange(location: NSMaxRange(selectedRange), length: markerLength)
+            if beforeRange.location >= 0, NSMaxRange(afterRange) <= nsText.length,
+               nsText.substring(with: beforeRange) == marker, nsText.substring(with: afterRange) == marker {
+                let combinedRange = NSRange(location: beforeRange.location, length: markerLength + selectedRange.length + markerLength)
+                let innerText = nsText.substring(with: selectedRange)
+                textView.insertText(innerText, replacementRange: combinedRange)
+                textView.setSelectedRange(NSRange(location: beforeRange.location, length: innerText.utf16.count))
+                return true
+            }
+
+            // Wrap. With no selection, this leaves the cursor between the
+            // two markers, ready to type.
+            let selectedText = nsText.substring(with: selectedRange)
+            textView.insertText(marker + selectedText + marker, replacementRange: selectedRange)
+            textView.setSelectedRange(NSRange(location: selectedRange.location + markerLength, length: selectedText.utf16.count))
+            return true
+        }
+
         private static let bodyFontSize: CGFloat = 15
         /// (marker, header level's displayed font size) — checked in this
         /// order; each requires an exact hash count immediately followed by
@@ -189,14 +246,23 @@ struct MarkdownNotesView: NSViewRepresentable {
             ], range: fullRange)
 
             let nsText = textView.string as NSString
+
+            // The line(s) touching the cursor/selection reveal their raw
+            // markdown syntax; every other line has its markers hidden
+            // entirely (see `markerAttributes(isFocused:)`) — Obsidian's
+            // live-preview behavior.
+            let focusedLineRange = nsText.lineRange(for: selectedRange)
+
             nsText.enumerateSubstrings(in: fullRange, options: [.byLines, .substringNotRequired]) { _, lineRange, _, _ in
-                self.styleLine(nsText.substring(with: lineRange), in: lineRange, storage: storage)
+                let isFocused = Self.isLineFocused(lineRange, focusedLineRange: focusedLineRange)
+                self.styleLine(nsText.substring(with: lineRange), in: lineRange, storage: storage, isFocused: isFocused)
             }
 
             applyDelimitedInlineStyle(
                 pattern: "\\*\\*([^*]+)\\*\\*",
                 contentGroup: 1,
-                contentAttributes: [.font: NSFont.boldSystemFont(ofSize: Self.bodyFontSize), .foregroundColor: NSColor.labelColor]
+                contentAttributes: [.font: NSFont.boldSystemFont(ofSize: Self.bodyFontSize), .foregroundColor: NSColor.labelColor],
+                focusedLineRange: focusedLineRange
             )
             applyDelimitedInlineStyle(
                 pattern: "(?<!\\*)\\*([^*]+)\\*(?!\\*)",
@@ -204,7 +270,8 @@ struct MarkdownNotesView: NSViewRepresentable {
                 contentAttributes: [
                     .font: NSFontManager.shared.convert(.systemFont(ofSize: Self.bodyFontSize), toHaveTrait: .italicFontMask),
                     .foregroundColor: NSColor.labelColor
-                ]
+                ],
+                focusedLineRange: focusedLineRange
             )
             applyDelimitedInlineStyle(
                 pattern: "`([^`]+)`",
@@ -213,13 +280,50 @@ struct MarkdownNotesView: NSViewRepresentable {
                     .font: NSFont.monospacedSystemFont(ofSize: Self.bodyFontSize - 1, weight: .regular),
                     .foregroundColor: NSColor.labelColor,
                     .backgroundColor: NSColor.textBackgroundColor.blended(withFraction: 0.5, of: .secondaryLabelColor) ?? NSColor.textBackgroundColor
-                ]
+                ],
+                focusedLineRange: focusedLineRange
             )
-            applyLinkStyle()
+            applyDelimitedInlineStyle(
+                pattern: "==([^=]+)==",
+                contentGroup: 1,
+                contentAttributes: [
+                    .font: NSFont.systemFont(ofSize: Self.bodyFontSize),
+                    .foregroundColor: NSColor.labelColor,
+                    .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.35)
+                ],
+                focusedLineRange: focusedLineRange
+            )
+            applyLinkStyle(focusedLineRange: focusedLineRange)
 
             storage?.endEditing()
             textView.setSelectedRange(selectedRange)
             updateContentHeight()
+        }
+
+        /// `true` if `lineRange` (one line from the `.byLines` enumeration,
+        /// so its bounds already align with paragraph boundaries) falls
+        /// inside `focusedLineRange` (the whole-line span touching the
+        /// current selection, from `NSString.lineRange(for:)`).
+        private static func isLineFocused(_ lineRange: NSRange, focusedLineRange: NSRange) -> Bool {
+            lineRange.location >= focusedLineRange.location
+                && lineRange.location < focusedLineRange.location + max(focusedLineRange.length, 1)
+        }
+
+        /// Overlap check for a regex match against the focused line span —
+        /// used where styling is applied by regex across the whole text
+        /// rather than line by line (links, bold/italic/code/highlight).
+        private static func isRangeFocused(_ range: NSRange, focusedLineRange: NSRange) -> Bool {
+            NSMaxRange(range) > focusedLineRange.location && range.location < NSMaxRange(focusedLineRange)
+        }
+
+        /// Markdown syntax markers are fully visible (small, dimmed) only
+        /// on the line currently being edited; everywhere else they're
+        /// shrunk to the point of invisibility so the styled content reads
+        /// clean, Obsidian-style.
+        private static func markerAttributes(isFocused: Bool) -> [NSAttributedString.Key: Any] {
+            isFocused
+                ? [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.tertiaryLabelColor]
+                : [.font: NSFont.systemFont(ofSize: 0.01), .foregroundColor: NSColor.clear]
         }
 
         /// Line-level constructs: headers, blockquotes, checkboxes, plain
@@ -228,13 +332,13 @@ struct MarkdownNotesView: NSViewRepresentable {
         /// so the content it introduces is what actually reads as "the
         /// heading" / "the quote" / etc., rather than the raw `##`/`>`/`-`
         /// characters competing with it at the same size and weight.
-        @MainActor private func styleLine(_ line: String, in lineRange: NSRange, storage: NSTextStorage?) {
+        @MainActor private func styleLine(_ line: String, in lineRange: NSRange, storage: NSTextStorage?, isFocused: Bool) {
             guard let storage else {
                 return
             }
 
             if let (marker, size) = Self.headerMarkers.first(where: { line.hasPrefix($0.0) }) {
-                applyMarker(marker, in: lineRange, storage: storage)
+                applyMarker(marker, in: lineRange, storage: storage, isFocused: isFocused)
                 applyContent(
                     after: marker,
                     in: lineRange,
@@ -245,12 +349,12 @@ struct MarkdownNotesView: NSViewRepresentable {
             }
 
             if let (timestampSeconds, _) = TimenoteFormat.parseLine(line) {
-                styleTimenoteLine(timestampSeconds: timestampSeconds, in: lineRange, storage: storage)
+                styleTimenoteLine(timestampSeconds: timestampSeconds, in: lineRange, storage: storage, isFocused: isFocused)
                 return
             }
 
             if line.hasPrefix("> ") {
-                applyMarker("> ", in: lineRange, storage: storage)
+                applyMarker("> ", in: lineRange, storage: storage, isFocused: isFocused)
                 applyContent(
                     after: "> ",
                     in: lineRange,
@@ -268,7 +372,7 @@ struct MarkdownNotesView: NSViewRepresentable {
                 let isChecked = (line as NSString).substring(with: checkboxMatch.range(at: 1)).lowercased() == "x"
                 let markerRange = NSRange(location: lineRange.location, length: markerLength)
                 let contentRange = NSRange(location: lineRange.location + markerLength, length: lineRange.length - markerLength)
-                storage.addAttributes([.font: NSFont.systemFont(ofSize: Self.bodyFontSize), .foregroundColor: NSColor.tertiaryLabelColor], range: markerRange)
+                storage.addAttributes(Self.markerAttributes(isFocused: isFocused), range: markerRange)
                 storage.addAttributes(
                     isChecked
                         ? [.font: NSFont.systemFont(ofSize: Self.bodyFontSize), .foregroundColor: NSColor.secondaryLabelColor, .strikethroughStyle: NSUnderlineStyle.single.rawValue]
@@ -279,13 +383,13 @@ struct MarkdownNotesView: NSViewRepresentable {
             }
 
             for bullet in ["- ", "* ", "+ "] where line.hasPrefix(bullet) {
-                applyMarker(bullet, in: lineRange, storage: storage)
+                applyMarker(bullet, in: lineRange, storage: storage, isFocused: isFocused)
                 return
             }
 
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.count >= 3, Set(["-", "*", "_"]).contains(where: { trimmed == String(repeating: $0, count: trimmed.count) }) {
-                storage.addAttributes([.font: NSFont.systemFont(ofSize: Self.bodyFontSize), .foregroundColor: NSColor.tertiaryLabelColor], range: lineRange)
+                storage.addAttributes(Self.markerAttributes(isFocused: isFocused), range: lineRange)
             }
         }
 
@@ -293,15 +397,17 @@ struct MarkdownNotesView: NSViewRepresentable {
         /// any other marker, except the timestamp itself, which renders as
         /// a clickable pill (`.link` to a `classroom-timenote:` URL; see
         /// `textView(_:clickedOnLink:at:)`).
-        @MainActor private func styleTimenoteLine(timestampSeconds: Double, in lineRange: NSRange, storage: NSTextStorage) {
+        @MainActor private func styleTimenoteLine(timestampSeconds: Double, in lineRange: NSRange, storage: NSTextStorage, isFocused: Bool) {
             let prefixText = TimenoteFormat.linePrefix(timestampSeconds: timestampSeconds)
             let prefixLength = min(prefixText.utf16.count, lineRange.length)
             let markerLength = min(TimenoteFormat.linePrefixMarker.utf16.count, prefixLength)
             let closingLength = min(2, prefixLength - markerLength)
 
             let markerRange = NSRange(location: lineRange.location, length: markerLength)
-            storage.addAttributes([.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor], range: markerRange)
+            storage.addAttributes(Self.markerAttributes(isFocused: isFocused), range: markerRange)
 
+            // The timestamp pill itself always stays visible — it's the
+            // clickable affordance, not syntax to hide.
             let timestampRange = NSRange(location: lineRange.location + markerLength, length: max(0, prefixLength - markerLength - closingLength))
             var pillAttributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold),
@@ -314,7 +420,7 @@ struct MarkdownNotesView: NSViewRepresentable {
             storage.addAttributes(pillAttributes, range: timestampRange)
 
             let closingRange = NSRange(location: lineRange.location + markerLength + timestampRange.length, length: closingLength)
-            storage.addAttributes([.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor], range: closingRange)
+            storage.addAttributes(Self.markerAttributes(isFocused: isFocused), range: closingRange)
 
             let contentRange = NSRange(location: lineRange.location + prefixLength, length: lineRange.length - prefixLength)
             if contentRange.length > 0 {
@@ -322,9 +428,9 @@ struct MarkdownNotesView: NSViewRepresentable {
             }
         }
 
-        private func applyMarker(_ marker: String, in lineRange: NSRange, storage: NSTextStorage) {
+        private func applyMarker(_ marker: String, in lineRange: NSRange, storage: NSTextStorage, isFocused: Bool) {
             let markerRange = NSRange(location: lineRange.location, length: min(marker.utf16.count, lineRange.length))
-            storage.addAttributes([.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.tertiaryLabelColor], range: markerRange)
+            storage.addAttributes(Self.markerAttributes(isFocused: isFocused), range: markerRange)
         }
 
         private func applyContent(after marker: String, in lineRange: NSRange, storage: NSTextStorage, attributes: [NSAttributedString.Key: Any]) {
@@ -342,7 +448,7 @@ struct MarkdownNotesView: NSViewRepresentable {
         /// (Cmd-click, standard AppKit behavior for `.link`-attributed
         /// text); the brackets/parens/URL portion is dimmed like every
         /// other marker.
-        @MainActor private func applyLinkStyle() {
+        @MainActor private func applyLinkStyle(focusedLineRange: NSRange) {
             guard let textView, let storage = textView.textStorage else {
                 return
             }
@@ -360,7 +466,8 @@ struct MarkdownNotesView: NSViewRepresentable {
                     continue
                 }
 
-                storage.addAttributes([.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.tertiaryLabelColor], range: match.range)
+                let isFocused = Self.isRangeFocused(match.range, focusedLineRange: focusedLineRange)
+                storage.addAttributes(Self.markerAttributes(isFocused: isFocused), range: match.range)
 
                 var linkAttributes: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: Self.bodyFontSize),
@@ -401,7 +508,12 @@ struct MarkdownNotesView: NSViewRepresentable {
         /// then `contentAttributes` overrides just the captured content
         /// group, restoring its color/font to something that reads as
         /// actual styled text rather than muted syntax.
-        @MainActor private func applyDelimitedInlineStyle(pattern: String, contentGroup: Int, contentAttributes: [NSAttributedString.Key: Any]) {
+        @MainActor private func applyDelimitedInlineStyle(
+            pattern: String,
+            contentGroup: Int,
+            contentAttributes: [NSAttributedString.Key: Any],
+            focusedLineRange: NSRange
+        ) {
             guard let textView, let storage = textView.textStorage else {
                 return
             }
@@ -412,7 +524,8 @@ struct MarkdownNotesView: NSViewRepresentable {
             }
 
             for match in regex.matches(in: textView.string, range: fullRange) {
-                storage.addAttributes([.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.tertiaryLabelColor], range: match.range)
+                let isFocused = Self.isRangeFocused(match.range, focusedLineRange: focusedLineRange)
+                storage.addAttributes(Self.markerAttributes(isFocused: isFocused), range: match.range)
 
                 let contentRange = match.range(at: contentGroup)
                 if contentRange.location != NSNotFound {
