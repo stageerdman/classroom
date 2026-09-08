@@ -32,7 +32,7 @@ struct MarkdownFileSheet: View {
             }
 
             ScrollView {
-                MarkdownNotesView(text: $text, contentHeight: $contentHeight, onTextChange: scheduleSave)
+                MarkdownNotesView(text: $text, contentHeight: $contentHeight, onTextChange: scheduleSave, documentId: fileURL.path)
                     .frame(minHeight: contentHeight, maxHeight: contentHeight)
             }
 

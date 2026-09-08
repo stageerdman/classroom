@@ -1,13 +1,31 @@
 import Foundation
 
-/// Encoding for a timestamped note: `> [!timenote HH:MM:SS.mmm] text`, an
-/// Obsidian-callout-flavored line that links a note back to a moment in
-/// the lesson's video/audio. `HH:MM:SS.mmm` (period-delimited
-/// milliseconds) is the same convention future transcript ingestion
-/// should use, so notes and transcript cues share one clock.
+/// Encoding for a timestamped note: `> @timenote(at: SECONDS){HH:MM:SS.mmm} text`,
+/// a blockquote line whose directive body is the clickable, always-visible
+/// timestamp pill (see `TimenoteDirective` in ClassroomApp for why the
+/// display form is the directive's *body* rather than its arguments) and
+/// links a note back to a moment in the lesson's video/audio. `HH:MM:SS.mmm`
+/// (period-delimited milliseconds) is the same convention future transcript
+/// ingestion should use, so notes and transcript cues share one clock.
 public enum TimenoteFormat {
-    public static let linePrefixMarker = "> [!timenote "
-    private static let closingBracket = "] "
+    /// Everything up to and including the directive's opening `{` — i.e. the
+    /// part that carries the raw seconds value and gets muted/hidden by the
+    /// editor except while the caret is inside it.
+    private static let directivePrefix = "> @timenote(at: "
+    private static let argumentsClose = "){"
+    private static let bodyClose = "} "
+
+    /// Legacy on-disk syntax marker, checked as a cheap pre-filter before
+    /// running `legacyLineRegex` over a document; see
+    /// `migratingLegacySyntax(in:)`.
+    private static let legacyLinePrefixMarker = "> [!timenote "
+
+    private static let lineRegex = try! NSRegularExpression(
+        pattern: #"^> @timenote\(at:\s*([0-9]*\.?[0-9]+)\)\{[^}]*\} ?(.*)$"#
+    )
+    private static let legacyLineRegex = try! NSRegularExpression(
+        pattern: #"^> \[!timenote ([0-9:.]+)\] ?(.*)$"#
+    )
 
     public static func formatTimestamp(_ totalSeconds: Double) -> String {
         let clampedSeconds = max(0, totalSeconds)
@@ -42,26 +60,51 @@ public enum TimenoteFormat {
     /// The text to insert for a new timenote, with a trailing space ready
     /// for the note's content.
     public static func linePrefix(timestampSeconds: Double) -> String {
-        linePrefixMarker + formatTimestamp(timestampSeconds) + closingBracket
+        directivePrefix + secondsLiteral(timestampSeconds) + argumentsClose + formatTimestamp(timestampSeconds) + bodyClose
+    }
+
+    /// A locale-independent, `Double`-parseable literal for the directive's
+    /// `at:` argument — millisecond precision matches `formatTimestamp`.
+    private static func secondsLiteral(_ totalSeconds: Double) -> String {
+        String(format: "%.3f", max(0, totalSeconds))
     }
 
     /// Parses a line, returning its timestamp (in seconds) and note text
     /// if it matches the timenote format; `nil` otherwise.
     public static func parseLine(_ line: String) -> (timestampSeconds: Double, text: String)? {
-        guard line.hasPrefix(linePrefixMarker) else {
+        let ns = line as NSString
+        guard let match = lineRegex.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) else {
             return nil
         }
 
-        let afterMarker = line.dropFirst(linePrefixMarker.count)
-        guard let closingRange = afterMarker.range(of: closingBracket) else {
+        guard let timestampSeconds = Double(ns.substring(with: match.range(at: 1))) else {
             return nil
         }
 
-        let timestampText = String(afterMarker[afterMarker.startIndex..<closingRange.lowerBound])
-        guard let timestampSeconds = parseTimestamp(timestampText) else {
-            return nil
+        return (timestampSeconds, ns.substring(with: match.range(at: 2)))
+    }
+
+    /// Rewrites any legacy `> [!timenote HH:MM:SS.mmm] text` lines in `text`
+    /// to the current directive syntax, line by line. Idempotent: text with
+    /// no legacy lines (including text already in the current format) passes
+    /// through unchanged. Run once when a `page.md`/`note.md` loads so
+    /// existing lesson notes upgrade transparently; the next save persists
+    /// the new form.
+    public static func migratingLegacySyntax(in text: String) -> String {
+        guard text.contains(legacyLinePrefixMarker) else {
+            return text
         }
 
-        return (timestampSeconds, String(afterMarker[closingRange.upperBound...]))
+        return text.components(separatedBy: "\n").map { line -> String in
+            let ns = line as NSString
+            guard
+                let match = legacyLineRegex.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)),
+                let timestampSeconds = parseTimestamp(ns.substring(with: match.range(at: 1)))
+            else {
+                return line
+            }
+
+            return linePrefix(timestampSeconds: timestampSeconds) + ns.substring(with: match.range(at: 2))
+        }.joined(separator: "\n")
     }
 }

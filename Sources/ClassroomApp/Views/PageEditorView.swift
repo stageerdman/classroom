@@ -31,6 +31,7 @@ struct PageEditorView: View {
                 ),
                 contentHeight: $editorHeight,
                 onTextChange: onTextChange,
+                documentId: "page:\(viewModel.selectedLesson?.relativePath ?? "none")",
                 isEditable: viewModel.isEditingModule,
                 onFocusChange: onFocusChange
             )

@@ -76,27 +76,28 @@ content: read-only unless the containing Module is in edit mode. **Notes**
 (`note.md`) is the viewer's own running notes: always editable, in or out
 of edit mode.
 
-Both editors render live Obsidian-style styling as you type —
-`#`/`##`/`###` headers, `**bold**`, `*italic*`, `` `code` ``, `> quotes`,
-`- [ ]` task lists, `==highlighted text==`, and `[text](url)` links all get
-styled inline. Markdown syntax markers are fully hidden except on the
-line the cursor is currently on, where they render small and dimmed —
-click into a line to see (and edit) its raw markdown, click away and it
-collapses back to styled text. Cmd-B/Cmd-I/Cmd-U wrap or unwrap the
-current selection with the matching marker (`<u>...</u>` for underline,
-since CommonMark has no native syntax for it).
+Both editors are backed by
+[swift-markdown-engine](https://github.com/nodes-app/swift-markdown-engine),
+a native TextKit 2 editor — see
+`updates/2026-09-08 MARKDOWN-ENGINE - OPEN/update.md` for why this replaced
+the app's original hand-rolled styler. `#`/`##`/`###` headers, `**bold**`,
+`*italic*`, `` `code` ``, `> quotes`, `- [ ]` task lists, and `[text](url)`
+links all render live as you type. Cmd-B/Cmd-I/Cmd-U wrap or unwrap the
+current selection with the matching marker.
 
 Notes support **timenotes** — lines that link back to a moment in the
-lesson's video/audio: `> [!timenote HH:MM:SS.mmm] your note text`,
+lesson's video/audio: `> @timenote(at: SECONDS){HH:MM:SS.mmm} your note text`,
 rendered as a clickable timestamp pill that seeks playback. Create one by
 clicking the comment-bubble button in the video transport bar (inserts a
-timenote at the current position and focuses Notes), or by typing
-`/timenote` and pressing Enter inside Notes, Notion-style. `HH:MM:SS.mmm`
-(period-delimited milliseconds) is deliberately the same clock a future
-transcript feature would use, so notes and transcript cues can line up
-without a conversion step. Any Markdown file opened from a ghost/
-attachment while editing gets the same live styling (minus timenotes,
-which are Notes-specific).
+timenote at the current position — no longer auto-focuses Notes, see the
+update note above), or by typing `/timenote` and pressing Enter inside
+Notes, Notion-style. `HH:MM:SS.mmm` (period-delimited milliseconds) is
+deliberately the same clock a future transcript feature would use, so notes
+and transcript cues can line up without a conversion step. Lesson notes
+written with the older `> [!timenote HH:MM:SS.mmm] text` syntax upgrade
+automatically the first time they're opened. Any Markdown file opened from
+a ghost/attachment while editing gets the same live styling (minus
+timenotes, which are Notes-specific).
 
 This is a breaking format change from the original flat
 `Lesson Name.mp4` + `Lesson Name.md` layout — classrooms in the old format
@@ -127,13 +128,6 @@ scripts/create-launcher-app.sh
 - `docs/` — phase-by-phase scope and verification checklists.
 - `updates/` — dated update folders tracking what shipped and why (see
   `CLAUDE.md` for the workflow).
-- `webviews/` — standalone Node/npm web projects whose static build
-  output gets bundled as app resources (currently just
-  `blocknote-spike/`, a dev-only evaluation window — see
-  `updates/2026-09-02 BLOCKNOTE-SPIKE - CLOSED/update.md`). `swift build`
-  never needs Node; only editing a `webviews/*` project does, via its
-  own `scripts/build-*.sh` to refresh the bundled copy under
-  `Sources/ClassroomApp/Resources/`.
 
 ## Working on this repo
 

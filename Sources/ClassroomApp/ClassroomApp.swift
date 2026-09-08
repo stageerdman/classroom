@@ -4,19 +4,12 @@ import SwiftUI
 @main
 struct ClassroomApp: App {
     @StateObject private var recentClassroomsMenuModel = RecentClassroomsMenuModel()
-    @State private var blockNoteSpikeWindowController = BlockNoteSpikeWindowController()
 
     var body: some Scene {
         WindowGroup("Classroom") {
             HomeView()
         }
         .commands {
-            CommandGroup(after: .windowArrangement) {
-                Button("BlockNote Spike (Dev)") {
-                    blockNoteSpikeWindowController.present()
-                }
-            }
-
             CommandGroup(after: .newItem) {
                 Button("Open Classroom...") {
                     NotificationCenter.default.post(name: .openClassroomRequested, object: nil)

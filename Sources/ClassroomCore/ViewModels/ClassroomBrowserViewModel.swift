@@ -1005,7 +1005,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
 
         do {
-            noteText = try notesService.loadNotes(for: selectedLesson)
+            noteText = TimenoteFormat.migratingLegacySyntax(in: try notesService.loadNotes(for: selectedLesson))
             isNoteDirty = false
             noteErrorMessage = nil
         } catch {
@@ -1024,7 +1024,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
 
         do {
-            pageText = try pageService.loadPage(for: selectedLesson)
+            pageText = TimenoteFormat.migratingLegacySyntax(in: try pageService.loadPage(for: selectedLesson))
             isPageDirty = false
             pageErrorMessage = nil
         } catch {

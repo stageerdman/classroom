@@ -41,5 +41,29 @@ final class TimenoteFormatTests: XCTestCase {
         XCTAssertNil(TimenoteFormat.parseLine("Just a regular note."))
         XCTAssertNil(TimenoteFormat.parseLine("> A regular quote."))
     }
+
+    func testMigratingLegacySyntaxRewritesOldTimenoteLines() {
+        let legacy = "Intro\n> [!timenote 00:02:05.500] Key insight here\nOutro"
+        let migrated = TimenoteFormat.migratingLegacySyntax(in: legacy)
+
+        let lines = migrated.components(separatedBy: "\n")
+        XCTAssertEqual(lines[0], "Intro")
+        XCTAssertEqual(lines[2], "Outro")
+
+        let parsed = TimenoteFormat.parseLine(lines[1])
+        XCTAssertNotNil(parsed)
+        XCTAssertEqual(parsed?.timestampSeconds ?? -1, 125.5, accuracy: 0.001)
+        XCTAssertEqual(parsed?.text, "Key insight here")
+    }
+
+    func testMigratingLegacySyntaxIsIdempotentOnCurrentSyntax() {
+        let current = TimenoteFormat.linePrefix(timestampSeconds: 42) + "Already current"
+        XCTAssertEqual(TimenoteFormat.migratingLegacySyntax(in: current), current)
+    }
+
+    func testMigratingLegacySyntaxLeavesUnrelatedTextUnchanged() {
+        let text = "Just a regular note.\n> A regular quote."
+        XCTAssertEqual(TimenoteFormat.migratingLegacySyntax(in: text), text)
+    }
 }
 #endif

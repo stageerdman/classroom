@@ -501,7 +501,7 @@ await MainActor.run {
 
     notesViewModel.updateNoteText("")
     notesViewModel.insertTimenoteForSelectedLesson(atSeconds: 65.25)
-    expect(notesViewModel.noteText == "> [!timenote 00:01:05.250] ", "Inserting a timenote should append its line prefix to Notes")
+    expect(notesViewModel.noteText == TimenoteFormat.linePrefix(timestampSeconds: 65.25), "Inserting a timenote should append its line prefix to Notes")
     expect(notesViewModel.selectedContentSections.contains(.notes), "Inserting a timenote should ensure Notes is visible even if it wasn't before")
 }
 

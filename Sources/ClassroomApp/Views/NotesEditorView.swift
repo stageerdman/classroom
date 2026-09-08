@@ -34,6 +34,7 @@ struct NotesEditorView: View {
                 ),
                 contentHeight: $editorHeight,
                 onTextChange: onTextChange,
+                documentId: "notes:\(viewModel.selectedLesson?.relativePath ?? "none")",
                 onTimenoteSlashCommand: { TimenoteFormat.linePrefix(timestampSeconds: playbackService.currentTimeSeconds) },
                 onTimenoteClick: { playbackService.seek(to: $0) },
                 focusRequest: focusRequest,
