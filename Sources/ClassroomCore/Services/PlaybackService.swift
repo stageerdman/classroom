@@ -17,6 +17,12 @@ public final class PlaybackService: ObservableObject {
     /// Default skip amount for `skipForward()`/`skipBackward()`.
     public static let skipIntervalSeconds: Double = 15
 
+    /// Playback speed range and step exposed by the speed slider —
+    /// speedup only, no slow-motion.
+    public static let minPlaybackRate: Float = 1
+    public static let maxPlaybackRate: Float = 3
+    public static let playbackRateStep: Float = 0.25
+
     @Published public private(set) var player: AVPlayer?
     @Published public private(set) var currentURL: URL?
     @Published public private(set) var errorMessage: String?
@@ -138,8 +144,9 @@ public final class PlaybackService: ObservableObject {
     }
 
     public func setPlaybackRate(_ rate: Float) {
-        let supportedRates: [Float] = [0.5, 1, 1.25, 1.5, 2]
-        playbackRate = supportedRates.contains(rate) ? rate : 1
+        let clamped = min(max(rate, Self.minPlaybackRate), Self.maxPlaybackRate)
+        let snapped = (clamped / Self.playbackRateStep).rounded() * Self.playbackRateStep
+        playbackRate = snapped
 
         if player?.timeControlStatus == .playing {
             player?.rate = playbackRate

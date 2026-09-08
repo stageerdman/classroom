@@ -102,6 +102,8 @@ struct VideoTransportControlsView: View {
             }
             .help(playbackService.isMuted ? "Unmute" : "Mute")
 
+            PlaybackSpeedControlView(playbackService: playbackService, tintColor: tintColor)
+
             Button(action: onInsertTimenote) {
                 Image(systemName: "text.bubble")
             }

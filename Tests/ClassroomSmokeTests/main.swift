@@ -313,6 +313,15 @@ await MainActor.run {
     playbackService.setPlaybackRate(1.5)
     expect(playbackService.playbackRate == 1.5, "Playback service should store supported playback speed")
 
+    playbackService.setPlaybackRate(4)
+    expect(playbackService.playbackRate == 3, "Playback rate should clamp to the 3x speedup ceiling")
+
+    playbackService.setPlaybackRate(0.5)
+    expect(playbackService.playbackRate == 1, "Playback rate should clamp to the 1x speedup floor (no slow-motion)")
+
+    playbackService.setPlaybackRate(1.6)
+    expect(playbackService.playbackRate == 1.5, "Playback rate should snap to the nearest 0.25 step")
+
     playbackService.load(url: metadataRoot.appendingPathComponent("Module/Missing.mp4"))
     expect(playbackService.player == nil, "Missing media should clear the player")
     expect(playbackService.errorMessage != nil, "Missing media should produce a safe playback error")
