@@ -143,6 +143,30 @@ CommonMark has no native underline syntax). swift-markdown-engine has no
 underline action at all, and the request was to match the library, not add
 something on top of it.
 
+## Cmd-Z/Cmd-Shift-Z: text undo vs. folder-structure undo
+
+`ClassroomApp.swift` unconditionally replaced the system Undo/Redo menu
+items with ones posting `.undoEditRequested`/`.redoEditRequested` — broadcasts
+`ClassroomBrowserView` turns into calls on `ClassroomBrowserViewModel`'s own
+`UndoManager`, which tracks folder/lesson-structure edits (renames, moves,
+transforms). Because a *menu item's* key equivalent takes priority over
+whatever the focused view would otherwise do with the same keystroke, this
+meant Cmd-Z/Cmd-Shift-Z always hit folder-structure undo — even while
+focused in Page/Notes wanting to undo a text edit instead.
+
+Fixed by trying the standard `undo:`/`redo:` action via the responder chain
+first (`NSApp.sendAction(Selector(("undo:")), to: nil, from: nil)`) — this is
+exactly what the system's *default*, un-replaced Undo/Redo menu items would
+do, and it's what `NSTextView` (swift-markdown-engine's included, via
+`allowsUndo = true` and its own per-document `UndoManager`, so text undo
+stays correctly scoped to whichever document's editor is focused) and any
+plain `NSTextField`-backed field (lesson/category rename, etc.) already
+implement for free. Only when nothing in the responder chain claims it —
+i.e. no text field is focused — does it fall back to the folder-structure
+broadcast. No `isEditingModule` gate was needed on the folder-undo side: its
+`UndoManager` only ever has actions pushed onto it by edits that already only
+happen in Module edit mode, so it's naturally empty (a no-op) otherwise.
+
 ## Verification
 
 - `swift build`, `swift test`, `swift run ClassroomSmokeTests`.

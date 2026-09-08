@@ -1,3 +1,4 @@
+import AppKit
 import ClassroomCore
 import SwiftUI
 
@@ -40,17 +41,27 @@ struct ClassroomApp: App {
 
             // Replaces SwiftUI's default (inert, since this app doesn't use
             // the environment's \.undoManager) Undo/Redo menu items with
-            // ones wired to ClassroomBrowserViewModel's own undo stack via
-            // the same NotificationCenter pattern used above — there's only
-            // ever one open classroom/window, so a broadcast is enough.
+            // ones wired to ClassroomBrowserViewModel's own folder/lesson
+            // undo stack via the same NotificationCenter pattern used above
+            // — there's only ever one open classroom/window, so a broadcast
+            // is enough. But first, try the standard `undo:`/`redo:` action
+            // via the responder chain: a focused text editor (Page/Notes,
+            // or any plain NSTextField-backed field like a rename box)
+            // implements those itself against its own text-edit undo stack,
+            // and should win over folder-structure undo while it's focused
+            // — only fall back to folder undo when nothing claimed it.
             CommandGroup(replacing: .undoRedo) {
                 Button("Undo") {
-                    NotificationCenter.default.post(name: .undoEditRequested, object: nil)
+                    if !NSApp.sendAction(Selector(("undo:")), to: nil, from: nil) {
+                        NotificationCenter.default.post(name: .undoEditRequested, object: nil)
+                    }
                 }
                 .keyboardShortcut("z", modifiers: [.command])
 
                 Button("Redo") {
-                    NotificationCenter.default.post(name: .redoEditRequested, object: nil)
+                    if !NSApp.sendAction(Selector(("redo:")), to: nil, from: nil) {
+                        NotificationCenter.default.post(name: .redoEditRequested, object: nil)
+                    }
                 }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
             }
