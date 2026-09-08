@@ -65,29 +65,83 @@ load-bearing, see above) plus the pill's font/colors on that body range.
 `MarkdownNotesView` parses the `classroom-timenote:` prefix back out of
 `onLinkClick`'s target string.
 
-## Known gaps (verify these specifically)
+## Formatting shortcuts, right-click menu, and focus tracking (second pass)
 
-swift-markdown-engine's public API (`NativeTextViewWrapper` + its
-`Coordinator`) has no cursor-position or first-responder control, and no
-focus-change callback — confirmed by reading the actual source, not just
-docs. Two interactions built on the old direct `NSTextView` access are
-affected:
+The first pass above shipped with three regressions from the old editor,
+found by the user testing it: Cmd-B/Cmd-I did nothing, `==highlight==` had no
+visual effect, right-click showed no formatting options, and — reported
+separately — arrow keys inside a focused editor were skipping video instead
+of moving the caret (the "arrow-key guard" gap called out below, now fixed).
 
-- **`/timenote` + Enter slash command**: reimplemented via `onTextMutation`
-  (fires after the engine commits an edit) — detects the completed
-  `/timenote\n` insertion and swaps it for the directive line in the `text`
-  binding. This *should* look instant, but there's no guarantee about where
-  the caret lands afterward (no API to place it) — needs a manual check.
-- **Focus-after-insert and arrow-key guard**: `focusRequest` (jump into Notes
-  and place the caret at the end after the transport bar's comment button
-  inserts a timenote) and `onFocusChange` (disable the video transport bar's
-  arrow-key skip while text is focused) have **no engine equivalent** and are
-  currently no-ops. The types under `NativeTextViewContainer`/`NativeTextView`
-  that would need reaching into aren't `public`, so there's no safe way to
-  wire these without depending on the package's private internals. Until the
-  package adds a focus/cursor API (or we decide reaching into internals is
-  worth the fragility), inserting a timenote from the transport bar no longer
-  auto-focuses Notes, and arrow keys may skip video playback while typing.
+**Root cause of the first three**: `NativeTextViewWrapper` ships its own
+formatting logic (`didMarkdownBold`, `didMarkdownItalic`, `didMarkdownHighlight`,
+`didMarkdownStrikethrough`, `didMarkdownInlineCode`, `didMarkdownBlockquote`,
+list/heading/link/image/code-block/horizontal-rule actions — all in the
+upstream `ContextMenu.swift`, despite the name) on its coordinator, correctly
+handling cases the old hand-rolled Cmd-B/I/U toggle got wrong (e.g.
+`***both***` → toggle bold → `*italic*`, not a mangled string — this directly
+fixes the "stacking" problem raised alongside this request). But the engine
+deliberately ships **no menu and no keyboard shortcuts** — `onBuildContextMenu`
+exists precisely so an embedder adds its own menu items calling those actions,
+and nothing wires keyboard shortcuts at all. `==highlight==`/`~~strikethrough~~`
+additionally need `HighlightExtension`/`StrikethroughExtension` *registered*
+on the configuration to render and toggle correctly — without them the
+actions still insert `==`/`~~` characters, they just don't mean anything to
+the parser. None of this was wired in the first pass; it is now:
+
+- `MarkdownEditorConfiguration.extensions` now includes `HighlightExtension()`
+  and `StrikethroughExtension()`.
+- `MarkdownFormattingAction.swift` (`Sources/ClassroomApp/Markdown/`) dispatches
+  to the engine's `didMarkdown*` actions by raw `Selector` — they're `@objc`
+  but not `public`, so a compile-time `#selector(...)` reference isn't
+  possible from this module; `NSObject.perform(_:with:)` is the standard,
+  sanctioned way to call an `@objc` method whose Swift access level would
+  otherwise block it, since Swift access control only gates the compiler's
+  static member lookup, not Objective-C message dispatch. Same file builds
+  the right-click formatting menu (headings 1–6, bold, italic, highlight,
+  strikethrough, inline code, blockquote, lists, link, image, code block,
+  horizontal rule) that the engine no longer ships one for.
+- A new "Format" menu in `ClassroomApp.swift` gives Bold/Italic/Highlight/
+  Strikethrough/Inline Code real keyboard shortcuts, broadcast via
+  `NotificationCenter` (same pattern this file already uses for Undo/Redo) —
+  necessary because the engine's coordinator isn't part of the AppKit
+  responder chain, so a menu item with no explicit `target` can't reach it.
+  Whichever editor currently has focus picks up the broadcast; see below for
+  how "currently has focus" is known at all.
+
+**The underlying blocker for all of this, and for the two gaps flagged in the
+first pass**: none of it is reachable without a direct reference to the
+specific `NSTextView` instance `NativeTextViewWrapper` mounts internally —
+menu items need a `target`, and focus/cursor control needs the view itself —
+and the package's public API hands back neither. `MarkdownTextViewLocator.swift`
+solves this by walking the AppKit view hierarchy from a `.background()`
+overlay to find the nearest real `NSTextView`, using only public AppKit types
+(`NSView.subviews`, casting to `NSTextView`) — no private type names, since
+`NativeTextView`/`NativeTextViewContainer` aren't `public` and can't be named
+from this module anyway. This is *load-bearing but structural*: it assumes
+`.background()` content stays positioned close to `NativeTextViewWrapper` in
+the view tree (already relied on for the `contentHeight` measurement below)
+and that swift-markdown-engine keeps mounting a real `NSTextView` somewhere
+under its `NSScrollView`. **Verify Page and Notes both visible in a split
+view don't cross-wire** (formatting/focus intended for one affecting the
+other) — the search is bounded and first-match-wins specifically to make
+that unlikely, but it hasn't been checked against the real split-view layout.
+
+With a real `NSTextView` reference in hand, the two gaps from the first pass
+are now fixed the same way:
+- **Focus-after-insert**: `focusRequest` now calls
+  `window?.makeFirstResponder(textView)` + `setSelectedRange(...)` directly.
+- **Arrow-key guard**: `onFocusChange` now fires from `NSText.didBeginEditingNotification`/
+  `didEndEditingNotification`, scoped via `object:` to this editor's specific
+  text view — not a global broadcast, which would also fire for unrelated
+  fields elsewhere in the app (lesson/category rename, the folder-path field)
+  and incorrectly block the video transport's arrow-key skip while someone's
+  renaming something.
+
+**Not carried over**: the old Cmd-U underline (`__text__` via inline HTML —
+CommonMark has no native underline syntax). swift-markdown-engine has no
+underline action at all, and the request was to match the library, not add
+something on top of it.
 
 ## Verification
 
@@ -99,6 +153,17 @@ affected:
   - Existing lesson notes with old-style `> [!timenote ...]` lines still show
     a clickable, correctly-seeking timestamp pill after opening (migration).
   - New timenotes via the transport bar's comment button and via typing
-    `/timenote` + Enter both produce a working pill.
-  - The two known gaps above, specifically: does losing auto-focus-on-insert
-    and the arrow-key guard actually bother you in practice?
+    `/timenote` + Enter both produce a working pill, and typing continues
+    naturally where the slash command left the cursor.
+  - Cmd-B, Cmd-I, Cmd-Shift-H (highlight), Cmd-Shift-X (strikethrough),
+    Cmd-E (inline code) all apply/toggle correctly, including on a selection
+    that already has one of the others applied (the old stacking bug).
+  - Right-click inside Page/Notes shows the new formatting section and each
+    item works.
+  - Clicking the comment-bubble button in the transport bar focuses Notes
+    with the caret at the end, ready to type.
+  - With only Page or only Notes open, arrow keys move the caret while
+    editing and skip video playback everywhere else, as before.
+  - **With Page and Notes both open in a split view**, formatting/arrow-key
+    behavior in one doesn't leak into the other — the specific thing to
+    watch for given the view-hierarchy search above.

@@ -54,6 +54,26 @@ struct ClassroomApp: App {
                 }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
             }
+
+            // Markdown formatting shortcuts. swift-markdown-engine's own
+            // formatting actions live on the coordinator, which isn't part
+            // of the AppKit responder chain, so a menu item with a bare
+            // key equivalent and no target can't reach it — this broadcasts
+            // instead, same pattern as everything else here, and whichever
+            // MarkdownNotesView currently has focus (there's at most one)
+            // picks it up. See MarkdownFormattingAction.
+            CommandMenu("Format") {
+                ForEach(MarkdownFormattingAction.keyboardShortcuts, id: \.action) { entry in
+                    Button(entry.action.menuTitle) {
+                        NotificationCenter.default.post(
+                            name: .markdownFormatRequested,
+                            object: nil,
+                            userInfo: ["action": entry.action.rawValue]
+                        )
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character(entry.key)), modifiers: entry.modifiers)
+                }
+            }
         }
     }
 }
@@ -64,4 +84,5 @@ extension Notification.Name {
     static let refreshClassroomRequested = Notification.Name("refreshClassroomRequested")
     static let undoEditRequested = Notification.Name("undoEditRequested")
     static let redoEditRequested = Notification.Name("redoEditRequested")
+    static let markdownFormatRequested = Notification.Name("markdownFormatRequested")
 }

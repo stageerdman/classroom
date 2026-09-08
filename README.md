@@ -82,8 +82,13 @@ a native TextKit 2 editor — see
 `updates/2026-09-08 MARKDOWN-ENGINE - OPEN/update.md` for why this replaced
 the app's original hand-rolled styler. `#`/`##`/`###` headers, `**bold**`,
 `*italic*`, `` `code` ``, `> quotes`, `- [ ]` task lists, and `[text](url)`
-links all render live as you type. Cmd-B/Cmd-I/Cmd-U wrap or unwrap the
-current selection with the matching marker.
+`==highlight==`, and `~~strikethrough~~` links all render live as you type.
+Cmd-B, Cmd-I, Cmd-Shift-H (highlight), Cmd-Shift-X (strikethrough), and
+Cmd-E (inline code) wrap/unwrap the current selection, correctly toggling
+between combinations (e.g. bold+italic → italic) instead of stacking. A
+right-click also offers headings, lists, links, images, code blocks, and
+horizontal rules — everything swift-markdown-engine's formatting actions
+support, matching its own (unshipped) built-in menu.
 
 Notes support **timenotes** — lines that link back to a moment in the
 lesson's video/audio: `> @timenote(at: SECONDS){HH:MM:SS.mmm} your note text`,
