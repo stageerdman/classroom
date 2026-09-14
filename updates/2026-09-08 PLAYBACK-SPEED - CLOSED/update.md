@@ -38,4 +38,31 @@ change speed from the app.
   predates this change.
 - Manual verification (by the user): open a lesson, click the speed
   button in the transport bar, drag the slider, confirm playback speed
-  changes and the label updates.
+  changes and the label updates — confirmed working (2026-09-08).
+
+## Follow-up fix (2026-09-14): doubled/echoed audio above 1x
+
+Reported symptom: at speeds above 1x, the voice sometimes sounded
+doubled after resuming from a pause; skipping forward/backward 15s
+cleared it until the next pause/resume.
+
+Root cause: `PlaybackService.play()`
+(`Sources/ClassroomCore/Services/PlaybackService.swift`) resumed via
+`player.playImmediately(atRate:)`, which is meant for pre-primed,
+low-latency resume (e.g. live streams) and can start decoding before
+the render pipeline has settled — worse at higher rates, since more
+audio has to be decoded per second immediately. `togglePlayPause()`
+and `scrubEnded()` both call `play()` on every resume, which is why it
+recurred after every pause; a bare `seek()` (used by skip
+forward/back) forces AVFoundation to flush and rebuild the render
+pipeline, which is why seeking cleared it.
+
+Fix: `play()` now resumes by setting `player.rate` directly instead of
+`playImmediately(atRate:)` — AVFoundation's standard resume-at-speed
+path, with no pre-priming assumption.
+
+Verification: `swift build`, `swift test` (same pre-existing
+`testAttachmentsOnlyExposedWhenNonEmpty` failure, unrelated),
+`swift run ClassroomSmokeTests` all pass. Manual verification pending
+— user to confirm doubled audio no longer occurs at 2x+ after
+pausing/resuming.

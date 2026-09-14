@@ -104,7 +104,14 @@ public final class PlaybackService: ObservableObject {
     }
 
     public func play() {
-        player?.playImmediately(atRate: playbackRate)
+        // `playImmediately(atRate:)` is meant for pre-primed/low-latency
+        // resume (e.g. live streams) and can start decoding before the
+        // render pipeline has settled — at rates above 1x this produced an
+        // audible doubled/echoed voice right after resuming from a pause,
+        // which a seek would then flush away. Setting `rate` directly is
+        // AVFoundation's standard resume-at-speed path and doesn't have
+        // that issue.
+        player?.rate = playbackRate
         isPlaying = true
     }
 
