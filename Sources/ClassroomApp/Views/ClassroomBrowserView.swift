@@ -97,6 +97,22 @@ struct ClassroomBrowserView: View {
     }
 
     private var emptyState: some View {
+        Group {
+            if viewModel.recentClassrooms.isEmpty {
+                firstRunState
+            } else {
+                RecentClassroomsEmptyStateView(
+                    recents: viewModel.recentClassrooms,
+                    errorMessage: viewModel.errorMessage,
+                    onOpen: viewModel.openRecent,
+                    onRemove: viewModel.removeRecent,
+                    onOpenDifferent: openFolder
+                )
+            }
+        }
+    }
+
+    private var firstRunState: some View {
         VStack(spacing: 20) {
             if let wordmark = BrandImage.wordmark.image {
                 wordmark
