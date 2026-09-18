@@ -21,6 +21,18 @@ mkdir -p "$RESOURCES_DIR"
 cp "$ROOT_DIR/.build/debug/Classroom" "$MACOS_DIR/Classroom"
 chmod +x "$MACOS_DIR/Classroom"
 
+# SwiftPM's generated `Bundle.module` accessor looks for each target's
+# resource bundle at `Bundle.main.bundleURL/<Target>_<Module>.bundle` —
+# i.e. directly inside the .app, as a sibling of Contents/, not inside
+# Contents/Resources. Skipping this copy crashes at launch the first
+# time any view touches a resource-backed `Bundle.module` asset (e.g.
+# BrandImage), since the generated accessor's fallback build-directory
+# path doesn't exist on a machine that hasn't built there.
+for bundle in "$ROOT_DIR"/.build/debug/*.bundle; do
+    [[ -d "$bundle" ]] || continue
+    cp -R "$bundle" "$APP_DIR/$(basename "$bundle")"
+done
+
 if [[ -f "$ICON_SOURCE" ]] && command -v sips >/dev/null && command -v iconutil >/dev/null; then
     ICONSET_DIR="$(mktemp -d)/AppIcon.iconset"
     mkdir -p "$ICONSET_DIR"

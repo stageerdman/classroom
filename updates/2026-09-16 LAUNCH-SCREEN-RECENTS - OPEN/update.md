@@ -53,3 +53,39 @@ recency, and existence is checked live at render time rather than cached.
     dimmed with a warning glyph; clicking it surfaces an inline error instead
     of silently doing nothing.
   - "Open a Different Folder..." still opens the standard folder picker.
+
+## Follow-up fix (2026-09-18): launcher app crashed on open
+
+Reported symptom: `Classroom.app` (built via
+`scripts/create-launcher-app.sh`) crashed immediately on launch —
+never a problem with `swift run`.
+
+Root cause: `RecentClassroomsEmptyStateView` (shipped above) is now
+shown at launch whenever any recents exist, and it renders
+`BrandImage.image`, which reads from SwiftPM's generated
+`Bundle.module` accessor for the `ClassroomApp` target. That
+accessor's generated code (`resource_bundle_accessor.swift`) only
+looks in two places: `Bundle.main.bundleURL/Classroom_ClassroomApp.bundle`
+(a sibling of `Contents/`, i.e. directly inside the `.app`) or the
+absolute `.build/.../Classroom_ClassroomApp.bundle` path from whoever
+last built it — and calls `fatalError` if neither exists.
+`create-launcher-app.sh` only ever copied the bare executable into
+`Contents/MacOS/`, so on any machine other than the one that produced
+that exact `.build` path, the first `Bundle.module` access crashed the
+whole app at launch. This didn't surface before because nothing at
+launch touched a `Bundle.module` resource until this update's empty
+state started rendering `BrandImage.image` unconditionally on the
+very first frame.
+
+Fix: `create-launcher-app.sh` now copies every `*.bundle` produced
+under `.build/debug/` to the top level of `Classroom.app` (a sibling
+of `Contents/`, matching where the generated accessor looks first).
+
+Verification: `swift build`, `swift test`, `swift run
+ClassroomSmokeTests` pass (same pre-existing, unrelated
+`testAttachmentsOnlyExposedWhenNonEmpty` failure). Rebuilt
+`Classroom.app` via the fixed script, confirmed
+`Classroom_ClassroomApp.bundle` now sits at `Classroom.app/`, launched
+it and confirmed it no longer crashes (no new
+`~/Library/Logs/DiagnosticReports/Classroom-*.ips` after launch, vs.
+five crash reports in the minute before the fix).
