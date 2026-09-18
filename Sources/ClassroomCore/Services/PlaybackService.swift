@@ -104,15 +104,38 @@ public final class PlaybackService: ObservableObject {
     }
 
     public func play() {
-        // `playImmediately(atRate:)` is meant for pre-primed/low-latency
-        // resume (e.g. live streams) and can start decoding before the
-        // render pipeline has settled — at rates above 1x this produced an
-        // audible doubled/echoed voice right after resuming from a pause,
-        // which a seek would then flush away. Setting `rate` directly is
-        // AVFoundation's standard resume-at-speed path and doesn't have
-        // that issue.
-        player?.rate = playbackRate
+        guard let player else {
+            return
+        }
+
         isPlaying = true
+
+        guard playbackRate > 1 else {
+            player.rate = playbackRate
+            return
+        }
+
+        // Above 1x, just setting `rate` on a paused player isn't enough:
+        // AVFoundation's time-pitch render pipeline can hold onto a stale
+        // buffered chunk of audio from before the pause and replay it
+        // alongside freshly decoded audio, sounding like a doubled/echoed
+        // voice. A zero-tolerance seek to the current position forces a
+        // pipeline flush without perceptibly moving playback — the same
+        // flush a scrub or 15s skip triggers, which is why those always
+        // cleared the doubling.
+        let resumeRate = playbackRate
+        player.seek(
+            to: player.currentTime(),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        ) { [weak self, weak player] _ in
+            Task { @MainActor in
+                guard let self, let player, self.player === player, self.isPlaying else {
+                    return
+                }
+                player.rate = resumeRate
+            }
+        }
     }
 
     public func pause() {

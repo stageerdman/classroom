@@ -66,3 +66,32 @@ Verification: `swift build`, `swift test` (same pre-existing
 `swift run ClassroomSmokeTests` all pass. Manual verification pending
 — user to confirm doubled audio no longer occurs at 2x+ after
 pausing/resuming.
+
+## Follow-up fix (2026-09-18): doubling persisted after the rate-only fix
+
+Reported symptom, unchanged from the 09-14 report: at speeds above 1x
+the voice sounds doubled, and it only sounds normal right after
+seeking (clicking the track or skipping 15s) — so the 09-14 fix
+(setting `player.rate` directly in `play()` instead of
+`playImmediately(atRate:)`) did not actually resolve it.
+
+Root cause (refined): setting `rate` alone on a *paused* player isn't
+enough to avoid the doubling — AVFoundation's time-pitch render
+pipeline can still be holding a stale, already-buffered chunk of audio
+from before the pause. When `rate` flips the player back to playing,
+that stale chunk gets flushed out alongside freshly decoded audio,
+producing the doubled/echoed sound. A `seek()` avoids this because
+seeking forces AVFoundation to flush and rebuild the render pipeline
+from scratch — which is why scrubbing or skipping always cleared it.
+
+Fix: `play()` now performs a zero-tolerance no-op seek to the current
+position *before* setting `rate`, whenever resuming above 1x — forcing
+the same pipeline flush a manual scrub would, without perceptibly
+moving playback. At 1x, `rate` is set directly as before (no pipeline
+staleness to worry about since there's no time-pitch processing).
+
+Verification: `swift build`, `swift test`, `swift run
+ClassroomSmokeTests` pending Xcode license acceptance on this machine
+(`sudo xcodebuild -license`, blocked on running commands as `sudo`).
+Manual verification pending — user to confirm doubled audio no longer
+occurs at 2x+ after pausing/resuming.
