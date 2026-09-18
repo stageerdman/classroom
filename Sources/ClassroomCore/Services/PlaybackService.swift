@@ -62,6 +62,12 @@ public final class PlaybackService: ObservableObject {
 
         let asset = AVURLAsset(url: standardizedURL)
         let item = AVPlayerItem(asset: asset)
+        // AVFoundation's default time-stretch algorithm (`.spectral`) is
+        // tuned for music and can produce a phasey, echo-like artifact on
+        // spoken-word content that worsens the longer it plays — lesson
+        // recordings are voice, so use the algorithm Apple recommends for
+        // speech instead.
+        item.audioTimePitchAlgorithm = .timeDomain
         let newPlayer = AVPlayer(playerItem: item)
         newPlayer.isMuted = isMuted
         player = newPlayer

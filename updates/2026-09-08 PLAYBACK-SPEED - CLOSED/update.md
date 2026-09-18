@@ -91,7 +91,34 @@ moving playback. At 1x, `rate` is set directly as before (no pipeline
 staleness to worry about since there's no time-pitch processing).
 
 Verification: `swift build`, `swift test`, `swift run
-ClassroomSmokeTests` pending Xcode license acceptance on this machine
-(`sudo xcodebuild -license`, blocked on running commands as `sudo`).
-Manual verification pending — user to confirm doubled audio no longer
-occurs at 2x+ after pausing/resuming.
+ClassroomSmokeTests` all pass (same pre-existing, unrelated
+`testAttachmentsOnlyExposedWhenNonEmpty` failure). Manual
+verification (by the user): the resume-from-pause doubling was fixed,
+but a persistent echo/phasing remained during continuous playback,
+worsening over time — see the 09-18 follow-up below, a distinct root
+cause from the same symptom family.
+
+## Follow-up fix (2026-09-18): persistent echo during playback, not just on resume
+
+Reported symptom, after the seek-flush fix above resolved the
+resume-from-pause doubling: audio at 2x+ still sounded like an echo —
+"two tracks playing" — continuously during playback, and the effect
+got worse the longer it played, not just right after a pause/resume.
+
+Root cause: unrelated to the resume path. `PlaybackService.load(url:)`
+never set `AVPlayerItem.audioTimePitchAlgorithm`, so AVFoundation used
+its default algorithm (`.spectral`), which is tuned for preserving
+music's harmonic content, not speech. On spoken-word audio, `.spectral`
+processing is prone to a phasey, echo-like artifact that compounds
+over the course of playback as the phase-vocoder's window alignment
+drifts — matching both "sounds like two tracks" and "gets worse after
+a while."
+
+Fix: `load(url:)` now sets `item.audioTimePitchAlgorithm = .timeDomain`
+on every loaded item — the algorithm Apple recommends for spoken-word
+content, cheaper and without the phasing artifact.
+
+Verification: `swift build`, `swift test`, `swift run
+ClassroomSmokeTests` all pass (same pre-existing, unrelated failure).
+Manual verification pending — user to confirm the echo is gone at 2x+,
+including over extended playback.
