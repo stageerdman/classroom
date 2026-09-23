@@ -122,3 +122,40 @@ Verification: `swift build`, `swift test`, `swift run
 ClassroomSmokeTests` all pass (same pre-existing, unrelated failure).
 Manual verification pending — user to confirm the echo is gone at 2x+,
 including over extended playback.
+
+## Follow-up fix (2026-09-23): the doubling was multiple audio tracks, not time-pitch
+
+Reported symptom, still present after every fix above: at fast speed the
+voice sounds doubled; it syncs momentarily then clicks. The user
+narrowed it to a specific kind of file — their own `.mov` screen/call
+recordings, e.g. `Sales Call - Miroslav.mov`.
+
+Root cause (the real one): those recordings are made with **OBS**, which
+writes **several audio tracks** into one file — a master mix plus one
+track per source (microphone, desktop audio). `ffprobe` on the reported
+file showed three stereo AAC audio tracks; track 1 was the loudest
+(−20.5 dB vs −23.1 / −22.7), the signature of the master mix sitting
+alongside its own component sources. AVPlayer plays *every* enabled
+audio track at once, so the mix stacked on top of the sources it already
+contained — literally two-to-three copies of the same voice. Barely
+audible at 1x; glaring above 1x, where each track is independently
+time-stretched, the copies drift apart, then periodically click back
+into sync. A seek cleared it only because it momentarily realigned all
+the tracks. Every prior fix (`playImmediately` → `rate`, seek-flush,
+`.spectral` → `.timeDomain`) was aimed at the time-pitch pipeline, which
+was never the cause — hence none of them held.
+
+Fix: `PlaybackService` now isolates a single audio track. When a player
+item reaches `.readyToPlay`, `isolateFirstAudioTrack(on:)` disables all
+but the first audio track (lowest `trackID` = OBS track 1, the full
+mix), so the complete audio plays exactly once. Single-track files are
+untouched. The `.timeDomain` algorithm and the resume seek-flush are
+left in place — both remain correct — but with one audio stream the
+doubling has no source at any speed.
+
+Verification: `swift build`, `swift test`, `swift run
+ClassroomSmokeTests` all pass (same pre-existing, unrelated
+`testAttachmentsOnlyExposedWhenNonEmpty` failure). Launcher rebuilt via
+`scripts/create-launcher-app.sh`. Manual verification pending — user to
+relaunch and confirm the doubling is gone at 2x on the OBS `.mov`
+recordings.

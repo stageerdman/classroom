@@ -89,12 +89,41 @@ public final class PlaybackService: ObservableObject {
 
     private func observeItemStatus(_ item: AVPlayerItem, sourceURL: URL) {
         statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
-            guard item.status == .failed else {
-                return
+            switch item.status {
+            case .failed:
+                Task { @MainActor in
+                    self?.handlePlaybackFailure(sourceURL: sourceURL, underlying: item.error)
+                }
+            case .readyToPlay:
+                Task { @MainActor in
+                    self?.isolateFirstAudioTrack(on: item)
+                }
+            default:
+                break
             }
-            Task { @MainActor in
-                self?.handlePlaybackFailure(sourceURL: sourceURL, underlying: item.error)
-            }
+        }
+    }
+
+    /// Screen/call recorders (OBS in particular) write several audio tracks
+    /// into one file — a master mix plus one track per source (microphone,
+    /// desktop audio). AVPlayer plays *every* enabled audio track at once, so
+    /// the mix stacks on top of the very sources it already contains and the
+    /// voice sounds doubled/echoed. It's easy to miss at 1x but glaring above
+    /// 1x, where each track is independently time-stretched and the copies
+    /// drift apart and periodically click back into sync. Keep only the first
+    /// audio track enabled — OBS writes the full mix as track 1 (lowest
+    /// audio `trackID`), so this yields the complete audio exactly once.
+    private func isolateFirstAudioTrack(on item: AVPlayerItem) {
+        let audioTracks = item.tracks
+            .filter { $0.assetTrack?.mediaType == .audio }
+            .sorted { ($0.assetTrack?.trackID ?? .max) < ($1.assetTrack?.trackID ?? .max) }
+
+        guard audioTracks.count > 1 else {
+            return
+        }
+
+        for (index, track) in audioTracks.enumerated() {
+            track.isEnabled = (index == 0)
         }
     }
 
