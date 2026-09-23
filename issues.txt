@@ -1,0 +1,6 @@
+# Known issues & TODOs
+
+Running list of known issues and TODOs for Classroom. Keep it current;
+graduate anything substantial into an update under updates/.
+
+(none recorded yet)

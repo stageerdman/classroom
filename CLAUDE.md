@@ -1,79 +1,104 @@
 # Working in this repo
 
-Classroom is a local-first macOS SwiftUI app (see
-`classroom_spec.md` for the product spec). This file defines how
-we work in this codebase — read it before making changes.
+Classroom is a local-first macOS SwiftUI app (see `classroom_spec.md` for the
+product spec). This file is **compiled from the global AI Control modules**
+(`~/.ai-control/modules/`: CODING, WORKFLOW, UX, STRUCTURE) and merged with
+this project's local rules. To regenerate it, run the rebuild-claude-md
+routine. Read it before making changes.
 
-## Main principles
+## Coding (CODING.md)
 
-1. **Maximum modularization.** Keep files, types, and functions small and
-   single-purpose. Split `ClassroomCore` by concern (`Models/`,
-   `Services/`, `ViewModels/`) and keep views broken into small, composable
-   pieces. The goal is that any change only requires reading a small,
-   relevant slice of the codebase — not the whole project. If a file is
-   getting hard to hold in your head, split it.
+- **Modularize for isolated context.** Write code so any part can be picked up,
+  understood, and fixed on its own, without loading the whole system into your
+  head. Draw clear module boundaries with small, explicit interfaces; keep
+  cross-module coupling low so a change stays contained and a bug has one
+  obvious home. In practice: keep `ClassroomCore` split by concern (`Models/`,
+  `Services/`, `ViewModels/`) and keep views broken into small, composable
+  pieces. If a file is getting hard to hold in your head, split it.
+- **Keep it minimal.** Build only what's truly needed. Don't add abstraction,
+  configuration, or layers on speculation. Prefer reuse over duplication, but
+  don't over-generalize before there's a second real caller.
+- **Test what matters.** Cover core logic, risky paths, and anything that would
+  silently regress. Skip tests for trivial glue. Phases in a roadmap mostly end
+  with tests that lock in what they built.
+- **Idiomatic to the ecosystem.** Match Swift/SwiftUI conventions, naming, and
+  idioms and the surrounding code. Read the neighbors before writing; new code
+  should look like it belongs. Reference code as `file_path:line_number`.
 
-2. **Always git commit and publish.** Work isn't done until it's committed
-   and pushed. Commit at meaningful checkpoints (not one giant commit at the
-   end), write commit messages that explain *why*, and push to `origin`
-   after committing unless the user says otherwise.
+## Workflow (WORKFLOW.md)
 
-3. **Always update proper documentation.** Code changes ship with the docs
-   that describe them:
-   - Phase/feature checklists in `docs/` when scope or verification steps
-     change.
-   - The active update's `update.md` (and `roadmap.md` if present) in
-     `updates/`.
-   - `README.md` if the change affects how the app is built, run, or used.
-   Undocumented changes are treated as incomplete.
+- **Commit and back up.** Commit after every working change — small, focused,
+  one logical unit per commit; don't batch unrelated edits. Write plain, honest
+  messages that say what changed and why. Everything lives on GitHub and is
+  pushed regularly; nothing important stays local-only. Commit and push unless
+  the user says otherwise. Never commit secrets — `.env` stays in `.gitignore`.
+- **Roadmaps and phases.** Any non-trivial update starts with a roadmap broken
+  into phases, recorded in the update's `update vX.md`. Most phases end with
+  tests that lock in what they built. Track status as you go.
+- **Research spikes.** For a new API, unfamiliar library, or genuinely new
+  design, make it a research phase: a throwaway spike that runs outside the main
+  code, inside the update folder. Capture findings in the update's `wiki.md`.
+- **Act as an orchestrator.** Prefer delegating to focused agents over doing
+  everything inline: decompose, fan out, synthesize.
+- **Verify before moving on.** Verify by running the actual thing, not just a
+  green test (see the local verification steps below).
 
-4. **Always build.** Before considering a change finished, build it
-   (`swift build`, `swift test`, `swift run ClassroomSmokeTests`) and
-   run the manual verification steps for the affected area. Then make sure
-   the user is actually running the latest build — rebuild
-   `Classroom.app` via `scripts/create-launcher-app.sh` (or the current
-   equivalent) so the launcher isn't stale, and tell the user to relaunch it.
-   Never report a task complete on the strength of a diff alone.
+## UX (UX.md)
 
-   For manual verification of this app specifically, don't drive it with
-   screenshots/`screencapture` — ask the user to check it instead. This is
-   the user's own running app on their own screen (real classroom data,
-   not a sandboxed test target), so screenshotting it risks capturing
-   whatever else is on screen, and the user can just look and tell you
-   directly.
+- **Always bring in UX experts.** For anything with a user-facing surface,
+  launch a dedicated UX expert agent to think the experience through. For a
+  surface with multiple parts, launch several in parallel, each owning a part,
+  and synthesize.
+- **Cut everything unnecessary.** Approach every UI as Steve Jobs would:
+  relentlessly remove anything that isn't truly needed. The fewest screens,
+  controls, and steps that do the job well.
+- **Minimal visual system.** Keep fonts, colors, spacing, and sizes to a small,
+  deliberate scale — not ad-hoc values. Aim for a polished, modern result.
+- **Standardized, reusable, isolated components.** Define a thing once and reuse
+  it everywhere. Keep components highly isolated with clear interfaces, mirroring
+  the modularity rule above.
+- **Fundamentals.** Accessible by default — real contrast, keyboard
+  reachability, sensible focus, meaningful labels. Sensible defaults, fast
+  feedback, and clear, honest error states over decoration.
 
-## How we track updates
+## Structure (STRUCTURE.md)
 
-Work is organized into **updates**, tracked under `updates/`. This is the
-single source of truth for what shipped, when, and why — use it instead of
-scattering status in chat or commit messages alone.
+This project carries the AI Control standard scaffold: `.project` (marker with
+`modules:`, `secrets:`, `claude_md_generated`), this `CLAUDE.md`, `.gitignore`
+(covers `.env`), `updates/`, and `issues.txt`. This project uses no secrets, so
+there is no `.env`.
 
-- Each update is a folder named `YYYY-MM-DD SHORT-NAME - STATUS`, e.g.
-  `2026-07-11 INIT - CLOSED`.
-  - `YYYY-MM-DD` is the date the update was opened.
-  - `SHORT-NAME` is a terse slug for what the update is about.
-  - `STATUS` is either `OPEN` or `CLOSED`.
-- Every update folder contains:
-  - `update.md` — required. What this update is, what shipped or is
-    shipping, why, and how it's verified.
-  - `roadmap.md` — optional. Forward-looking plan/backlog for the update,
-    when there's enough scope to warrant tracking it separately from
-    `update.md`.
-  - Anything else relevant (notes, design docs) as needed.
-- **Starting an update:** create a new folder with status `OPEN`, and write
-  `update.md` describing the goal before diving into code.
-- **Working an update:** keep `update.md` (and `roadmap.md`) current as
-  scope becomes clearer or shifts — this is a living document, not a
-  postmortem written at the end.
-- **Closing an update:** when the work is done and verified, rename the
-  folder's status suffix from `OPEN` to `CLOSED` and do a final pass on
-  `update.md` summarizing what actually shipped. Commit the close.
-- Only one update should normally be `OPEN` at a time. Ask before opening a
-  second one concurrently.
+- **Follow the ecosystem's norms.** Keep the standard SwiftPM layout
+  (`Sources/`, `Tests/`, `Package.swift`). Keep things flat and simple; add
+  folders only when the project genuinely grows into them.
+- **The `updates/` folder.** Each update is a folder named
+  `updates/YYYY-MM-DD UPDATE_NAME - OPEN/` while in progress and `- CLOSED/`
+  when done. Inside: `update vX.md` (goal, phased roadmap, live status; bump
+  `X` when the plan is substantially reworked) and `wiki.md` (durable decisions
+  and lessons). Only one update should normally be OPEN at a time — ask before
+  opening a second.
+  - **Local note:** update folders created before adoption (2026-09-23) use the
+    older `update.md` (+ optional `roadmap.md`) convention and one uses a
+    `- BACKLOG` status. Leave those as they are; new updates follow the standard
+    above.
 
-## Verification
+## Local rules (project-specific)
 
-- `swift build`
-- `swift test`
-- `swift run ClassroomSmokeTests`
-- Relevant manual verification checklist from `docs/` or the active update.
+- **Documentation ships with the code.** Code changes ship with the docs that
+  describe them: phase/feature checklists in `docs/`, the active update's files
+  in `updates/`, and `README.md` when a change affects how the app is built,
+  run, or used. Undocumented changes are treated as incomplete.
+- **Always build and verify.** Before considering a change finished:
+  - `swift build`
+  - `swift test`
+  - `swift run ClassroomSmokeTests`
+  - the relevant manual verification checklist from `docs/` or the active update.
+  Then make sure the user is actually running the latest build — rebuild
+  `Classroom.app` via `scripts/create-launcher-app.sh` (or the current
+  equivalent) so the launcher isn't stale, and tell the user to relaunch it.
+  Never report a task complete on the strength of a diff alone.
+- **Don't screenshot this app to verify it.** For manual verification, don't
+  drive it with screenshots/`screencapture` — ask the user to check instead.
+  This is the user's own running app on their own screen (real classroom data,
+  not a sandboxed test target), so screenshotting risks capturing whatever else
+  is on screen, and the user can just look and tell you directly.
