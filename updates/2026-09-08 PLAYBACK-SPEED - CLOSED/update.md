@@ -159,3 +159,13 @@ ClassroomSmokeTests` all pass (same pre-existing, unrelated
 `scripts/create-launcher-app.sh`. Manual verification pending — user to
 relaunch and confirm the doubling is gone at 2x on the OBS `.mov`
 recordings.
+
+Verified: user confirmed the doubling is gone at 2x on the OBS `.mov`
+recordings (2026-09-23).
+
+Cleanup: with the true cause fixed, `play()`'s zero-tolerance seek-flush
+on resume above 1x — added when the doubling was mistaken for a stale
+time-pitch buffer — is no longer needed, so `play()` now just sets
+`player.rate` directly at every speed. Resume is instant again.
+`.timeDomain` stays: it's still the right time-pitch algorithm for the
+single remaining speech track at >1x.

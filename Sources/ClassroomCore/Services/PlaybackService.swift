@@ -144,33 +144,7 @@ public final class PlaybackService: ObservableObject {
         }
 
         isPlaying = true
-
-        guard playbackRate > 1 else {
-            player.rate = playbackRate
-            return
-        }
-
-        // Above 1x, just setting `rate` on a paused player isn't enough:
-        // AVFoundation's time-pitch render pipeline can hold onto a stale
-        // buffered chunk of audio from before the pause and replay it
-        // alongside freshly decoded audio, sounding like a doubled/echoed
-        // voice. A zero-tolerance seek to the current position forces a
-        // pipeline flush without perceptibly moving playback — the same
-        // flush a scrub or 15s skip triggers, which is why those always
-        // cleared the doubling.
-        let resumeRate = playbackRate
-        player.seek(
-            to: player.currentTime(),
-            toleranceBefore: .zero,
-            toleranceAfter: .zero
-        ) { [weak self, weak player] _ in
-            Task { @MainActor in
-                guard let self, let player, self.player === player, self.isPlaying else {
-                    return
-                }
-                player.rate = resumeRate
-            }
-        }
+        player.rate = playbackRate
     }
 
     public func pause() {
