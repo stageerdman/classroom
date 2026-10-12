@@ -1,3 +1,4 @@
+import AppKit
 import ClassroomCore
 import SwiftUI
 
@@ -300,6 +301,8 @@ struct ClassroomSidebarView: View {
         Button("Move Down") { viewModel.moveDirectLesson(moduleID: module.id, lessonID: lesson.id, offset: 1) }
         Divider()
         Button("Reset Direct Lesson Order") { viewModel.resetDirectLessonOrder(moduleID: module.id) }
+        Divider()
+        Button("Reveal in Finder") { revealLessonInFinder(lesson) }
 
         if viewModel.isEditingModule {
             Divider()
@@ -311,6 +314,11 @@ struct ClassroomSidebarView: View {
                 viewModel.trashLesson(lessonID: lesson.id)
             }
         }
+    }
+
+    private func revealLessonInFinder(_ lesson: SidebarLesson) {
+        guard let folderURL = viewModel.lessonFolderURL(lessonID: lesson.id) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([folderURL])
     }
 
     @ViewBuilder

@@ -701,6 +701,19 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         }
     }
 
+    /// Resolves the on-disk folder for a lesson so the UI can reveal it in
+    /// Finder. Returns `nil` if the folder can't be located, mirroring how
+    /// `trashLesson` resolves the lesson URL from its relative path (id).
+    public func lessonFolderURL(lessonID: String) -> URL? {
+        guard
+            let url = url(forRelativePath: lessonID),
+            FileManager.default.fileExists(atPath: url.path)
+        else {
+            return nil
+        }
+        return url
+    }
+
     /// Trash/restore undo needs its own mutually-recursive pair rather than
     /// the generic `registerUndoRedo` — `FileManager.trashItem` can rename
     /// the item inside the Trash to dodge a collision, so each new trash
