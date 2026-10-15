@@ -160,9 +160,21 @@ public final class PlaybackService: ObservableObject {
         }
     }
 
-    public func seek(to seconds: Double) {
+    /// Seeks to `seconds`. By default AVPlayer may snap to a nearby keyframe
+    /// (landing up to a second or so off); pass `precise: true` for a
+    /// frame-accurate seek so click-to-jump targets (transcript cues,
+    /// timenotes) land exactly on the requested moment — otherwise landing
+    /// just *before* a cue's start makes the active-cue highlight resolve to
+    /// the previous cue. Scrubbing keeps the default (fast, tolerant) seek so
+    /// a continuous drag stays smooth.
+    public func seek(to seconds: Double, precise: Bool = false) {
         let clampedUpper = durationSeconds.map { min(seconds, $0) } ?? seconds
-        player?.seek(to: CMTime(seconds: max(0, clampedUpper), preferredTimescale: 600))
+        let time = CMTime(seconds: max(0, clampedUpper), preferredTimescale: 600)
+        if precise {
+            player?.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+        } else {
+            player?.seek(to: time)
+        }
     }
 
     public func skipForward(_ seconds: Double = PlaybackService.skipIntervalSeconds) {

@@ -36,7 +36,7 @@ struct NotesEditorView: View {
                 onTextChange: onTextChange,
                 documentId: "notes:\(viewModel.selectedLesson?.relativePath ?? "none")",
                 onTimenoteSlashCommand: { TimenoteFormat.linePrefix(timestampSeconds: playbackService.currentTimeSeconds) },
-                onTimenoteClick: { playbackService.seek(to: $0) },
+                onTimenoteClick: { playbackService.seek(to: $0, precise: true) },
                 focusRequest: focusRequest,
                 onFocusChange: onFocusChange
             )

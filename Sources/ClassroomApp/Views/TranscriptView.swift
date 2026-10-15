@@ -115,7 +115,7 @@ struct TranscriptView: View {
     /// follow and recenters optimistically on the clicked cue (the active-cue
     /// highlight catches up on the next time tick ~0.5s later).
     private func seek(to cue: TranscriptCue, proxy: ScrollViewProxy) {
-        playbackService.seek(to: cue.startSeconds)
+        playbackService.seek(to: cue.startSeconds, precise: true)
         follow.reattachToActiveCue()
         scroll(to: cue.id, anchor: .center, animated: true, proxy: proxy)
         follow.lastCenteredCueID = cue.id
