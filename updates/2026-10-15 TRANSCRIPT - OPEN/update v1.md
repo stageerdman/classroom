@@ -97,23 +97,26 @@ Note: `swift test` has one PRE-EXISTING unrelated failure
 (`SmokeTests.testAttachmentsOnlyExposedWhenNonEmpty`) — logged in
 `issues.txt`. All transcript tests pass.
 
-### Phase 3 — Cue rendering (TranscriptView, static)  ◐
-- [ ] `TranscriptCueRow` per the wiki spec (name color, timestamp pill
-      rest/hover, parenthetical, body, same-speaker grouping, active-cue
-      highlight bar + tint).
-- [ ] Click timestamp → `playbackService.seek`; highlight from
-      `currentTimeSeconds`.
-- [ ] Wire `case .transcript` into the content-pane switch (plain list, no
-      follow yet).
+### Phase 3 — Cue rendering (TranscriptView, static)  ☑
+- [x] `TranscriptCueRow` per the wiki spec (name color, timestamp pill
+      rest/hover + pointing-hand cursor, parenthetical, body, same-speaker
+      grouping, active-cue accent bar + tint with 0.18s cross-fade).
+- [x] Click timestamp → `playbackService.seek`; active cue from
+      `currentTimeSeconds` via `activeCueID(at:)`. Inert timestamps when no
+      playable media (`canSeek`).
+- [x] `case .transcript` → `TranscriptView` in the content-pane switch.
 
-### Phase 4 — Pinned stacked layout  ☐
-- [ ] In `ClassroomBrowserView.detail`: when `selectedContentSections`
-      contains `.transcript`, render pinned header + chips + video, then the
-      `LessonContentPane` in a height-filling scrolling region; else keep the
-      existing outer `ScrollView`. Ensure Page/Notes panes scroll within the
-      region when paired.
+### Phase 4 — Pinned stacked layout  ☑
+- [x] `ClassroomBrowserView.detail` branches: `isTranscriptMode` (transcript
+      among selected) → `transcriptModeDetail` (header + video + selector
+      pinned, `LessonContentPane` fills remaining height and scrolls); else
+      `scrollingDetail` (the original single outer `ScrollView`, unchanged).
+      Section switch extracted to `sectionView(_:)`. Paired Page/Notes panes
+      wrapped in their own `ScrollView` within the bounded region.
+      (Attachments are intentionally not shown in transcript mode — it's a
+      focused reading layout; they remain in Page/Notes modes.)
 
-### Phase 5 — Follow / auto-scroll / recenter  ☐
+### Phase 5 — Follow / auto-scroll / recenter  ◐
 - [ ] `ScrollViewReader` + comfort-band (middle 60%) recenter; recenter on
       open (top if nothing played yet).
 - [ ] Detach on genuine user scroll via AppKit `NSScrollView`

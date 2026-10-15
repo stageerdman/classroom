@@ -132,62 +132,127 @@ struct ClassroomBrowserView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// Whether the transcript is one of the visible sections. Transcript needs
+    /// to follow playback and recenter in its own scroll while the video stays
+    /// put, so its presence switches the detail area from the usual single
+    /// page-scroll to a pinned-video + scrolling-content layout.
+    private var isTranscriptMode: Bool {
+        viewModel.selectedContentSections.contains(.transcript)
+    }
+
     private var detail: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if let selectedLesson = viewModel.selectedLesson {
-                    lessonHeader(selectedLesson)
-
-                    if selectedLesson.mediaURL != nil {
-                        mediaPlayer
-                    } else if viewModel.isEditingModule {
-                        mediaPlayer
-                    }
-
-                    LessonContentSectionSelector(
-                        availableSections: viewModel.availableContentSections,
-                        selectedSections: viewModel.selectedContentSections,
-                        onToggle: viewModel.toggleContentSection
-                    )
-
-                    LessonContentPane(sections: viewModel.selectedContentSections) { section in
-                        switch section {
-                        case .page:
-                            PageEditorView(
-                                viewModel: viewModel,
-                                editorHeight: $pageEditorHeight,
-                                onTextChange: schedulePageAutosave,
-                                onFocusChange: { isTextEditorFocused = $0 }
-                            )
-                        case .notes:
-                            NotesEditorView(
-                                viewModel: viewModel,
-                                playbackService: playbackService,
-                                editorHeight: $noteEditorHeight,
-                                isTargeted: $isTargetedNotes,
-                                focusRequest: noteFocusRequest,
-                                onTextChange: scheduleNoteAutosave,
-                                onFocusChange: { isTextEditorFocused = $0 }
-                            )
-                        case .transcript:
-                            // Replaced by TranscriptView in Phase 3.
-                            Text("Transcript")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    if !selectedLesson.attachmentURLs.isEmpty || viewModel.isEditingModule {
-                        attachmentsSection(selectedLesson.attachmentURLs)
-                    }
+        Group {
+            if let selectedLesson = viewModel.selectedLesson {
+                if isTranscriptMode {
+                    transcriptModeDetail(selectedLesson)
                 } else {
+                    scrollingDetail(selectedLesson)
+                }
+            } else {
+                ScrollView {
                     Text("Select a lesson from the sidebar.")
                         .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(32)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// The original layout: everything in one vertical scroll. Used whenever
+    /// the transcript isn't on screen — unchanged behavior for Page/Notes.
+    private func scrollingDetail(_ selectedLesson: Lesson) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                lessonHeader(selectedLesson)
+
+                if selectedLesson.mediaURL != nil || viewModel.isEditingModule {
+                    mediaPlayer
+                }
+
+                contentSectionSelector
+
+                LessonContentPane(sections: viewModel.selectedContentSections) { section in
+                    sectionView(section)
+                }
+
+                if !selectedLesson.attachmentURLs.isEmpty || viewModel.isEditingModule {
+                    attachmentsSection(selectedLesson.attachmentURLs)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(32)
         }
+    }
+
+    /// Transcript layout: header, video and the section selector pinned at the
+    /// top; the content pane fills the remaining height and scrolls on its own
+    /// (so the transcript can follow playback without pushing the video away).
+    /// Paired Page/Notes panes get their own scroll within the region.
+    private func transcriptModeDetail(_ selectedLesson: Lesson) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            lessonHeader(selectedLesson)
+
+            if selectedLesson.mediaURL != nil || viewModel.isEditingModule {
+                mediaPlayer
+            }
+
+            contentSectionSelector
+
+            LessonContentPane(sections: viewModel.selectedContentSections) { section in
+                if section == .transcript {
+                    sectionView(section)
+                } else {
+                    // Page/Notes editors size to their content and rely on an
+                    // outer scroll; give them one inside the bounded region.
+                    ScrollView {
+                        sectionView(section)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(32)
+    }
+
+    private var contentSectionSelector: some View {
+        LessonContentSectionSelector(
+            availableSections: viewModel.availableContentSections,
+            selectedSections: viewModel.selectedContentSections,
+            onToggle: viewModel.toggleContentSection
+        )
+    }
+
+    @ViewBuilder
+    private func sectionView(_ section: LessonContentSection) -> some View {
+        switch section {
+        case .page:
+            PageEditorView(
+                viewModel: viewModel,
+                editorHeight: $pageEditorHeight,
+                onTextChange: schedulePageAutosave,
+                onFocusChange: { isTextEditorFocused = $0 }
+            )
+        case .notes:
+            NotesEditorView(
+                viewModel: viewModel,
+                playbackService: playbackService,
+                editorHeight: $noteEditorHeight,
+                isTargeted: $isTargetedNotes,
+                focusRequest: noteFocusRequest,
+                onTextChange: scheduleNoteAutosave,
+                onFocusChange: { isTextEditorFocused = $0 }
+            )
+        case .transcript:
+            TranscriptView(
+                cues: viewModel.transcriptCues,
+                playbackService: playbackService,
+                errorMessage: viewModel.transcriptErrorMessage
+            )
+        }
     }
 
     private func lessonHeader(_ lesson: Lesson) -> some View {
