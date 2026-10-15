@@ -18,8 +18,8 @@ struct ClassroomBrowserView: View {
     @State private var isTargetedNotes = false
     @State private var isTargetedAttachments = false
     @State private var noteFocusRequest = 0
-    @State private var isTextEditorFocused = false
     @State private var openMarkdownFileURL: URL?
+    @State private var arrowKeyMonitor: Any?
 
     var body: some View {
         Group {
@@ -61,7 +61,9 @@ struct ClassroomBrowserView: View {
         .onReceive(NotificationCenter.default.publisher(for: .redoEditRequested)) { _ in
             viewModel.undoManager.redo()
         }
+        .onAppear { installArrowKeyMonitor() }
         .onDisappear {
+            removeArrowKeyMonitor()
             noteAutosaveTask?.cancel()
             pageAutosaveTask?.cancel()
             viewModel.saveSelectedNoteIfNeeded()
@@ -233,8 +235,7 @@ struct ClassroomBrowserView: View {
             PageEditorView(
                 viewModel: viewModel,
                 editorHeight: $pageEditorHeight,
-                onTextChange: schedulePageAutosave,
-                onFocusChange: { isTextEditorFocused = $0 }
+                onTextChange: schedulePageAutosave
             )
         case .notes:
             NotesEditorView(
@@ -243,8 +244,7 @@ struct ClassroomBrowserView: View {
                 editorHeight: $noteEditorHeight,
                 isTargeted: $isTargetedNotes,
                 focusRequest: noteFocusRequest,
-                onTextChange: scheduleNoteAutosave,
-                onFocusChange: { isTextEditorFocused = $0 }
+                onTextChange: scheduleNoteAutosave
             )
         case .transcript:
             TranscriptView(
@@ -276,6 +276,58 @@ struct ClassroomBrowserView: View {
         }
     }
 
+    // MARK: - Arrow-key skip
+
+    /// Left/Right arrows skip the video ±15s — but only when a text view
+    /// isn't the first responder, so typing in Page/Notes (or a transcript's
+    /// text selection, a rename field, etc.) keeps arrows for cursor movement.
+    /// A local key monitor (app-wide, covering the full-screen/popout windows
+    /// too) is used instead of a SwiftUI `.keyboardShortcut`, which would
+    /// grab arrows globally and fire even mid-edit.
+    private func installArrowKeyMonitor() {
+        guard arrowKeyMonitor == nil else {
+            return
+        }
+        let service = playbackService
+        arrowKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Read the Sendable primitives from the event here (NSEvent isn't
+            // Sendable, so it can't cross into the MainActor hop below). The
+            // monitor runs on the main thread, so these reads are safe.
+            let keyCode = event.keyCode
+            let isModified = !event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .subtracting([.function, .numericPad])
+                .isEmpty
+            // A focused text view (Page/Notes editor, rename field editor,
+            // etc.) owns the arrows — don't skip the video.
+            let textHasFocus = event.window?.firstResponder is NSText
+
+            guard (keyCode == 123 || keyCode == 124), !isModified, !textHasFocus else {
+                return event
+            }
+
+            let consumed = MainActor.assumeIsolated { () -> Bool in
+                guard service.player != nil else {
+                    return false
+                }
+                if keyCode == 123 {
+                    service.skipBackward()
+                } else {
+                    service.skipForward()
+                }
+                return true
+            }
+            return consumed ? nil : event
+        }
+    }
+
+    private func removeArrowKeyMonitor() {
+        if let arrowKeyMonitor {
+            NSEvent.removeMonitor(arrowKeyMonitor)
+        }
+        arrowKeyMonitor = nil
+    }
+
     private var mediaPlayer: some View {
         Group {
             if let player = playbackService.player {
@@ -288,8 +340,7 @@ struct ClassroomBrowserView: View {
                         showsFullScreenButton: false,
                         showsPopoutButton: false,
                         looksLikeOverlay: false,
-                        onInsertTimenote: insertTimenoteAtCurrentPlaybackPosition,
-                        disableArrowKeySkip: isTextEditorFocused
+                        onInsertTimenote: insertTimenoteAtCurrentPlaybackPosition
                     )
                 } else if isPoppedOut {
                     poppedOutPlaceholder
@@ -303,8 +354,7 @@ struct ClassroomBrowserView: View {
                             isFullScreen: false,
                             onToggleFullScreen: presentFullScreenPlayer,
                             onTogglePopout: presentPopoutPlayer,
-                            onInsertTimenote: insertTimenoteAtCurrentPlaybackPosition,
-                            disableArrowKeySkip: isTextEditorFocused
+                            onInsertTimenote: insertTimenoteAtCurrentPlaybackPosition
                         )
                         .padding(12)
                     }
