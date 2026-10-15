@@ -60,6 +60,10 @@ final class SmokeTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
 
         try write(root, "Module/WithAttachments", marker: true, media: "Lesson.mp4")
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Module/WithAttachments/Attachments", isDirectory: true),
+            withIntermediateDirectories: true
+        )
         try Data().write(
             to: root.appendingPathComponent("Module/WithAttachments/Attachments/Handout.pdf")
         )

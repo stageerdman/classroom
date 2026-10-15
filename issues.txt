@@ -3,10 +3,4 @@
 Running list of known issues and TODOs for Classroom. Keep it current;
 graduate anything substantial into an update under updates/.
 
-- SmokeTests.testAttachmentsOnlyExposedWhenNonEmpty (ClassroomCoreTests)
-  fails deterministically: its setup writes
-  `Module/WithAttachments/Attachments/Handout.pdf` without first creating the
-  `Attachments/` directory, and `Data().write(to:)` doesn't create parent
-  dirs. Pre-existing (fails independently of the transcript work). Fix: create
-  the Attachments directory in the test before writing the file. Left alone to
-  keep it out of the transcript change's scope.
+(none recorded yet)
