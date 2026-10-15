@@ -20,6 +20,9 @@ struct ClassroomBrowserView: View {
     @State private var noteFocusRequest = 0
     @State private var openMarkdownFileURL: URL?
     @State private var arrowKeyMonitor: Any?
+    /// Page∥Notes split: `true` keeps both panes in one shared scroll (they
+    /// move together, the default); `false` gives each pane its own scroll.
+    @State private var scrollLinked = true
 
     var body: some View {
         Group {
@@ -142,11 +145,25 @@ struct ClassroomBrowserView: View {
         viewModel.selectedContentSections.contains(.transcript)
     }
 
+    /// Page∥Notes is the one split where linked/independent scrolling is a
+    /// meaningful choice — a transcript pane always scrolls on its own to
+    /// follow playback, so the link toggle only applies here.
+    private var isPageNotesSplit: Bool {
+        viewModel.selectedContentSections.count == 2 && !isTranscriptMode
+    }
+
+    /// Pin the header/video/selector and give the content pane its own scroll
+    /// region when: the transcript is shown (it needs to follow playback in
+    /// place), or a Page∥Notes split is set to scroll independently.
+    private var usesPinnedLayout: Bool {
+        isTranscriptMode || (isPageNotesSplit && !scrollLinked)
+    }
+
     private var detail: some View {
         Group {
             if let selectedLesson = viewModel.selectedLesson {
-                if isTranscriptMode {
-                    transcriptModeDetail(selectedLesson)
+                if usesPinnedLayout {
+                    pinnedDetail(selectedLesson)
                 } else {
                     scrollingDetail(selectedLesson)
                 }
@@ -162,8 +179,9 @@ struct ClassroomBrowserView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// The original layout: everything in one vertical scroll. Used whenever
-    /// the transcript isn't on screen — unchanged behavior for Page/Notes.
+    /// The original layout: everything in one vertical scroll. Used for a
+    /// single Page/Notes section, or a linked Page∥Notes split (both panes
+    /// share this one scroll, so they move together).
     private func scrollingDetail(_ selectedLesson: Lesson) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -173,7 +191,7 @@ struct ClassroomBrowserView: View {
                     mediaPlayer
                 }
 
-                contentSectionSelector
+                selectorRow
 
                 LessonContentPane(sections: viewModel.selectedContentSections) { section in
                     sectionView(section)
@@ -188,11 +206,11 @@ struct ClassroomBrowserView: View {
         }
     }
 
-    /// Transcript layout: header, video and the section selector pinned at the
-    /// top; the content pane fills the remaining height and scrolls on its own
-    /// (so the transcript can follow playback without pushing the video away).
-    /// Paired Page/Notes panes get their own scroll within the region.
-    private func transcriptModeDetail(_ selectedLesson: Lesson) -> some View {
+    /// Pinned layout: header, video and the section selector stay at the top;
+    /// the content pane fills the remaining height and each section scrolls on
+    /// its own. Used for the transcript (so it can follow playback without
+    /// pushing the video away) and for an unlinked Page∥Notes split.
+    private func pinnedDetail(_ selectedLesson: Lesson) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             lessonHeader(selectedLesson)
 
@@ -200,7 +218,7 @@ struct ClassroomBrowserView: View {
                 mediaPlayer
             }
 
-            contentSectionSelector
+            selectorRow
 
             LessonContentPane(sections: viewModel.selectedContentSections) { section in
                 if section == .transcript {
@@ -220,12 +238,36 @@ struct ClassroomBrowserView: View {
         .padding(32)
     }
 
-    private var contentSectionSelector: some View {
-        LessonContentSectionSelector(
-            availableSections: viewModel.availableContentSections,
-            selectedSections: viewModel.selectedContentSections,
-            onToggle: viewModel.toggleContentSection
-        )
+    /// The section chips, plus a link/unlink scroll toggle for a Page∥Notes
+    /// split.
+    private var selectorRow: some View {
+        HStack(spacing: 10) {
+            LessonContentSectionSelector(
+                availableSections: viewModel.availableContentSections,
+                selectedSections: viewModel.selectedContentSections,
+                onToggle: viewModel.toggleContentSection
+            )
+
+            if isPageNotesSplit {
+                Button {
+                    scrollLinked.toggle()
+                } label: {
+                    Image(systemName: scrollLinked ? "link" : "link.badge.plus")
+                        .font(.subheadline)
+                        .foregroundStyle(scrollLinked ? Color.accentColor : Color.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            scrollLinked ? AnyShapeStyle(Color.accentColor.opacity(0.15)) : AnyShapeStyle(.clear),
+                            in: RoundedRectangle(cornerRadius: 6)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help(scrollLinked
+                    ? "Linked scrolling — the panes scroll together. Click to scroll each independently."
+                    : "Independent scrolling — each pane scrolls on its own. Click to link them.")
+            }
+        }
     }
 
     @ViewBuilder
