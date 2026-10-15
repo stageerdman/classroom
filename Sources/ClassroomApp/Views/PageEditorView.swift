@@ -15,6 +15,11 @@ struct PageEditorView: View {
     /// `scrollRequest` changes.
     var scrollToText: String?
     var scrollRequest: Int = 0
+    /// Fill the available height with an internally-scrolling, caret-tracking
+    /// editor (pinned layout) rather than growing to fit an outer scroll.
+    var scrollsInternally: Bool = false
+    var scrollSyncController: ScrollSyncController?
+    var scrollSyncPane: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -43,9 +48,16 @@ struct PageEditorView: View {
                 onCommentOnSelection: onCommentOnSelection,
                 scrollToText: scrollToText,
                 scrollRequest: scrollRequest,
+                scrollsInternally: scrollsInternally,
+                scrollSyncController: scrollSyncController,
+                scrollSyncPane: scrollSyncPane,
                 onFocusChange: onFocusChange
             )
-            .frame(minHeight: editorHeight, maxHeight: editorHeight)
+            .frame(
+                maxWidth: scrollsInternally ? .infinity : nil,
+                minHeight: scrollsInternally ? nil : editorHeight,
+                maxHeight: scrollsInternally ? .infinity : editorHeight
+            )
 
             if !viewModel.isEditingModule, viewModel.pageText.isEmpty {
                 Text("This lesson has no page content yet.")
@@ -63,5 +75,6 @@ struct PageEditorView: View {
                     .foregroundStyle(.red)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: scrollsInternally ? .infinity : nil, alignment: .topLeading)
     }
 }

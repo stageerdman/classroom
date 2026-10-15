@@ -14,6 +14,11 @@ struct NotesEditorView: View {
     /// Clicking a page-quote chip in Notes fires this with the quoted text so
     /// the caller can reveal the passage in Page.
     var onPageQuoteClick: ((String) -> Void)?
+    /// Fill the available height with an internally-scrolling, caret-tracking
+    /// editor (pinned layout) rather than growing to fit an outer scroll.
+    var scrollsInternally: Bool = false
+    var scrollSyncController: ScrollSyncController?
+    var scrollSyncPane: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -41,10 +46,17 @@ struct NotesEditorView: View {
                 onTimenoteSlashCommand: { TimenoteFormat.linePrefix(timestampSeconds: playbackService.currentTimeSeconds) },
                 onTimenoteClick: { playbackService.seek(to: $0, precise: true) },
                 onPageQuoteClick: onPageQuoteClick,
+                scrollsInternally: scrollsInternally,
+                scrollSyncController: scrollSyncController,
+                scrollSyncPane: scrollSyncPane,
                 focusRequest: focusRequest,
                 onFocusChange: onFocusChange
             )
-            .frame(minHeight: editorHeight, maxHeight: editorHeight)
+            .frame(
+                maxWidth: scrollsInternally ? .infinity : nil,
+                minHeight: scrollsInternally ? nil : editorHeight,
+                maxHeight: scrollsInternally ? .infinity : editorHeight
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(isTargeted ? Color.accentColor : Color.clear, lineWidth: 2)
@@ -67,5 +79,6 @@ struct NotesEditorView: View {
                     .foregroundStyle(.red)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: scrollsInternally ? .infinity : nil, alignment: .topLeading)
     }
 }
