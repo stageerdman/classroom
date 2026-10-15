@@ -41,11 +41,7 @@ final class PageSelectionCommentController {
     }
 
     private func updateButton() {
-        guard
-            let textView,
-            let layoutManager = textView.layoutManager,
-            let textContainer = textView.textContainer
-        else {
+        guard let textView, let window = textView.window else {
             hideButton()
             return
         }
@@ -57,10 +53,16 @@ final class PageSelectionCommentController {
             return
         }
 
-        let glyphRange = layoutManager.glyphRange(forCharacterRange: selection, actualCharacterRange: nil)
-        var bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-        bounds.origin.x += textView.textContainerOrigin.x
-        bounds.origin.y += textView.textContainerOrigin.y
+        // IMPORTANT: use `firstRect(forCharacterRange:)` (TextKit-2-safe), NOT
+        // `textView.layoutManager` — touching `.layoutManager` force-downgrades
+        // the engine's TextKit 2 text view to TextKit 1 and collapses its
+        // layout to a single line.
+        let screenRect = textView.firstRect(forCharacterRange: selection, actualRange: nil)
+        guard screenRect.width > 0 || screenRect.height > 0 else {
+            hideButton()
+            return
+        }
+        let bounds = textView.convert(window.convertFromScreen(screenRect), from: nil)
 
         let host = buttonHost ?? makeButtonHost()
         host.rootView = PageCommentButton { [weak self] in
