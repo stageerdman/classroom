@@ -302,7 +302,7 @@ private struct TranscriptCueRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 12)
-                TranscriptTimestampButton(seconds: cue.startSeconds, canSeek: canSeek, onSeek: onSeek)
+                TranscriptTimestampButton(seconds: cue.startSeconds, color: speakerColor, canSeek: canSeek, onSeek: onSeek)
             }
 
             Text(cue.text)
@@ -317,13 +317,13 @@ private struct TranscriptCueRow: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 16)
         .background(
-            isActive ? Color.accentColor.opacity(activeTintOpacity) : .clear,
+            isActive ? speakerColor.opacity(activeTintOpacity) : .clear,
             in: RoundedRectangle(cornerRadius: 6)
         )
         .overlay(alignment: .leading) {
             if isActive {
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(Color.accentColor)
+                    .fill(speakerColor)
                     .frame(width: 3)
                     .padding(.vertical, 4)
             }
@@ -337,6 +337,9 @@ private struct TranscriptCueRow: View {
 /// when the pointer is on it (there are hundreds of these).
 private struct TranscriptTimestampButton: View {
     let seconds: Double
+    /// Matches the cue's speaker color so the timestamp reads as part of that
+    /// speaker's turn rather than a fixed accent.
+    let color: Color
     let canSeek: Bool
     let onSeek: () -> Void
 
@@ -346,11 +349,11 @@ private struct TranscriptTimestampButton: View {
         Button(action: onSeek) {
             Text(Self.label(for: seconds))
                 .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                .foregroundStyle(canSeek ? Color.accentColor : Color.secondary)
+                .foregroundStyle(canSeek ? color : Color.secondary)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
                 .background(
-                    (canSeek && isHovered) ? Color.accentColor.opacity(0.15) : .clear,
+                    (canSeek && isHovered) ? color.opacity(0.15) : .clear,
                     in: RoundedRectangle(cornerRadius: 5)
                 )
         }
