@@ -24,7 +24,8 @@ original product and engineering spec,
 gallery/lesson-folder update,
 `updates/2026-08-30 MODULE-EDITOR - CLOSED/update.md` for the editor, and
 `updates/2026-09-02 NOTES-PAGE-SPLIT - CLOSED/update.md` for the Page/Notes
-split and timenotes.
+split and timenotes, and
+`updates/2026-10-15 TRANSCRIPT - OPEN/update v1.md` for the transcript tab.
 
 ## Structure
 
@@ -35,6 +36,7 @@ Classroom Root/                  Depth 1: Classroom
 │   ├── Lesson 1/                  Depth 3: Direct lesson folder
 │   │   ├── .lesson                 Hidden marker — this folder is a lesson
 │   │   ├── Lesson 1.mp4            At most one playable media file
+│   │   ├── Lesson 1.md             Optional transcript (named like the media)
 │   │   ├── page.md                 Authored lesson content (edit-mode only)
 │   │   ├── note.md                 The viewer's own notes (always editable)
 │   │   └── Attachments/            Optional — files attached to the lesson
@@ -49,9 +51,10 @@ Classroom Root/                  Depth 1: Classroom
 A folder is a **Lesson** if it directly contains a hidden `.lesson` marker
 file — that's what lets a Lesson folder and a Category folder coexist at
 the same depth. A Lesson folder holds at most one playable media file
-(`.mp4`, `.mov`, `.m4v`, `.mp3`, `.m4a`, `.wav`, `.flv`), a `page.md`, a
-`note.md`, and an optional `Attachments/` folder; attachments only show up
-in the UI when that folder is present and non-empty. Removing an
+(`.mp4`, `.mov`, `.m4v`, `.mp3`, `.m4a`, `.wav`, `.flv`), an optional
+transcript (a `.md` file named like the media — see **Transcript** below), a
+`page.md`, a `note.md`, and an optional `Attachments/` folder; attachments
+only show up in the UI when that folder is present and non-empty. Removing an
 attachment from the editor moves it into a `Removed/` folder inside that
 lesson rather than deleting it — visible in the editor's raw file tree,
 invisible to normal browsing, same as `Attachments/` is until it's the
@@ -71,8 +74,9 @@ scanned.
 
 ### Page and Notes
 
-A lesson's content area has a top selector — **Page**, **Notes** — above
-the video/audio player. Selecting one shows it full-width; selecting both
+A lesson's content area has a top selector — **Page**, **Notes**, and
+**Transcript** (the last only when the lesson has a transcript file) — above
+the video/audio player. Selecting one shows it full-width; selecting two
 splits the pane in two. **Page** (`page.md`) is the lesson's authored
 content: read-only unless the containing Module is in edit mode. **Notes**
 (`note.md`) is the viewer's own running notes: always editable, in or out
@@ -99,12 +103,44 @@ clicking the comment-bubble button in the video transport bar (inserts a
 timenote at the current position — no longer auto-focuses Notes, see the
 update note above), or by typing `/timenote` and pressing Enter inside
 Notes, Notion-style. `HH:MM:SS.mmm` (period-delimited milliseconds) is
-deliberately the same clock a future transcript feature would use, so notes
-and transcript cues can line up without a conversion step. Lesson notes
+deliberately the same clock the **Transcript** feature uses, so notes
+and transcript cues line up on one timeline. Lesson notes
 written with the older `> [!timenote HH:MM:SS.mmm] text` syntax upgrade
 automatically the first time they're opened. Any Markdown file opened from
 a ghost/attachment while editing gets the same live styling (minus
 timenotes, which are Notes-specific).
+
+### Transcript
+
+If a lesson folder contains a Markdown file named like its media file
+(`Lesson 1.mp4` → `Lesson 1.md`), it's treated as a **transcript** and a
+**Transcript** chip appears in the content selector. It is read-only — an
+imported artifact, never edited in-app — and is never mistaken for `page.md`
+(the base-name match is excluded from the legacy single-Markdown → Page
+migration; a `page.mp4`/`note.mp4` video keeps its authored `page.md`/`note.md`
+rather than adopting it as a transcript).
+
+The transcript is a conversation rendered as timestamped **cues**. Each cue is
+a header line — a bold speaker name, a `[MM:SS]` (or `[H:MM:SS]`) timestamp,
+and an optional annotation like `(interrupting)` — followed by the spoken
+text:
+
+```text
+**Obchodník** [00:30]
+Radku, zdravím vás!
+
+**Klient** [09:51] (interrupting)
+Uhu.
+```
+
+Clicking a cue's timestamp seeks the player to that moment. As playback
+advances, the current cue is highlighted and the transcript follows along,
+keeping it in view; scrolling by hand detaches the follow (a **Jump to
+current** pill brings it back, as does clicking any timestamp). Because it
+needs to stay beside the video while it scrolls and recenters, selecting the
+Transcript switches the lesson's detail area to a pinned-video-on-top layout
+(the other sections keep the normal single-scroll page). A transcript whose
+media can't be played still reads fine — its timestamps are just inert.
 
 This is a breaking format change from the original flat
 `Lesson Name.mp4` + `Lesson Name.md` layout — classrooms in the old format

@@ -135,12 +135,45 @@ Note: `swift test` has one PRE-EXISTING unrelated failure
 Needs real-app manual verification (the AppKit live-scroll bridge and
 `scrollTo` centering can't be unit-tested) — see Phase 7.
 
-### Phase 6 — Edge states & docs  ◐
-- [ ] Unparseable/empty transcript → chip still shows, quiet message.
-- [ ] Transcript present but video missing → readable, timestamps inert.
-- [ ] README + `docs/` note; fill `wiki.md` lessons.
+### Phase 6 — Edge states & docs  ☑
+- [x] Unparseable/empty transcript → chip still shows, quiet
+      "This transcript couldn't be read." message (`transcriptErrorMessage`).
+- [x] Transcript present but media unplayable → readable, timestamps inert
+      (`canSeek == false`).
+- [x] Malformed/non-header lines fold into the current cue (parser).
+- [x] README updated (structure diagram, selector, new Transcript section,
+      timenote clock note). `wiki.md` holds the durable design.
 
-### Phase 7 — Verify & ship  ☐
-- [ ] `swift build`, `swift test`, `swift run ClassroomSmokeTests`.
-- [ ] Rebuild `Classroom.app` launcher; ask user to relaunch and run the
-      manual verification checklist.
+### Phase 7 — Verify & ship  ◐
+- [x] `swift build`, `swift test` (one pre-existing unrelated failure — see
+      `issues.txt`), `swift run ClassroomSmokeTests` (passes).
+- [ ] Rebuild `Classroom.app` launcher via
+      `scripts/create-launcher-app.sh`; user relaunches.
+- [ ] Manual verification checklist (below).
+
+## Manual verification checklist
+
+Drop a `.md` named like a lesson's video into that lesson's folder, re-open
+the classroom, select the lesson, then:
+
+1. **Chip appears** only for lessons that have the transcript file; absent
+   otherwise.
+2. **Rendering** — speakers colored (first speaker accent, other primary),
+   repeated same-speaker labels suppressed, `(interrupting)` muted-italic,
+   timestamps right-aligned; readable in light *and* dark mode.
+3. **Click-to-seek** — clicking a `[MM:SS]` jumps the video there; hovering a
+   timestamp shows the pill + pointing-hand cursor.
+4. **Live highlight** — playing the video highlights the current cue; the
+   highlight advances as playback moves.
+5. **Auto-follow** — the list keeps the active cue in view; opening the tab
+   recenters on it (top if nothing has played yet).
+6. **Detach + resume** — scrolling by hand stops the auto-follow; a
+   "Jump to current" pill appears and (like clicking any timestamp) resumes
+   it. *(This is the riskiest bit — the user-scroll detection rides on the
+   AppKit live-scroll bridge; confirm a manual scroll actually detaches and a
+   programmatic recenter does not.)*
+7. **Layout** — with Transcript selected the video stays pinned on top while
+   the transcript scrolls; Page/Notes selections are unchanged. Transcript ∥
+   Notes split works.
+8. **Lesson switch** — switching lessons with the tab open recenters on the
+   new lesson's transcript; a lesson without one drops the chip and selection.
