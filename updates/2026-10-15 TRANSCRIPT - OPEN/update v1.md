@@ -145,11 +145,10 @@ Needs real-app manual verification (the AppKit live-scroll bridge and
       timenote clock note). `wiki.md` holds the durable design.
 
 ### Phase 7 — Verify & ship  ◐
-- [x] `swift build`, `swift test` (one pre-existing unrelated failure — see
-      `issues.txt`), `swift run ClassroomSmokeTests` (passes).
-- [ ] Rebuild `Classroom.app` launcher via
-      `scripts/create-launcher-app.sh`; user relaunches.
-- [ ] Manual verification checklist (below).
+- [x] `swift build`, `swift test` (now 64/64 — fixed the unrelated broken
+      attachments test along the way), `swift run ClassroomSmokeTests`.
+- [x] Rebuilt `Classroom.app` launcher via `scripts/create-launcher-app.sh`.
+- [ ] **User:** relaunch `Classroom.app` and run the manual checklist below.
 
 ## Manual verification checklist
 
