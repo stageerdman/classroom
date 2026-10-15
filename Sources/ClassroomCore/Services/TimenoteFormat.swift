@@ -89,6 +89,57 @@ public enum TimenoteFormat {
         String(format: "%.3f", max(0, totalSeconds))
     }
 
+    // MARK: - Inline time references (typed `[MM:SS]`)
+
+    private static let timeRefPrefix = "@timeref(at: "
+
+    /// An inline `@timeref(at: S){[MM:SS]}` directive — the clickable pill a
+    /// typed `[MM:SS]` is rewritten to, mid-sentence (no blockquote, no
+    /// trailing space, unlike `linePrefix`).
+    public static func inlineTimeRef(seconds: Double) -> String {
+        timeRefPrefix + secondsLiteral(seconds) + "){" + bracketedTimestamp(seconds) + "}"
+    }
+
+    private static let trailingBracketRegex = try! NSRegularExpression(
+        pattern: #"\[([0-9]{1,2}(?::[0-9]{2}){1,2})\]$"#
+    )
+
+    /// If the text up to `end` ends in a bare `[MM:SS]` / `[H:MM:SS]` /
+    /// `[HH:MM:SS]` token, returns that token's range and its seconds — used to
+    /// auto-convert a just-typed timestamp into a clickable inline time ref.
+    public static func trailingBracketTimestamp(in text: String, endingAt end: Int) -> (range: NSRange, seconds: Double)? {
+        let ns = text as NSString
+        guard end > 0, end <= ns.length else {
+            return nil
+        }
+        let prefix = ns.substring(to: end)
+        let prefixNS = prefix as NSString
+        guard
+            let match = trailingBracketRegex.firstMatch(in: prefix, range: NSRange(location: 0, length: prefixNS.length)),
+            let seconds = bracketSeconds(prefixNS.substring(with: match.range(at: 1)))
+        else {
+            return nil
+        }
+        return (match.range, seconds)
+    }
+
+    /// Parses `MM:SS` / `H:MM:SS` / `HH:MM:SS` (colon-separated, each field
+    /// numeric) into seconds.
+    private static func bracketSeconds(_ value: String) -> Double? {
+        let parts = value.split(separator: ":")
+        guard (2...3).contains(parts.count) else {
+            return nil
+        }
+        var seconds = 0.0
+        for part in parts {
+            guard let n = Double(part) else {
+                return nil
+            }
+            seconds = seconds * 60 + n
+        }
+        return seconds
+    }
+
     /// Parses a line, returning its timestamp (in seconds) and note text
     /// if it matches the timenote format; `nil` otherwise.
     public static func parseLine(_ line: String) -> (timestampSeconds: Double, text: String)? {

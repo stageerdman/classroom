@@ -66,6 +66,23 @@ final class TimenoteFormatTests: XCTestCase {
         XCTAssertEqual(TimenoteFormat.migratingLegacySyntax(in: text), text)
     }
 
+    func testInlineTimeRefIsParseableAndShowsBracketedPill() {
+        let ref = TimenoteFormat.inlineTimeRef(seconds: 65)
+        XCTAssertTrue(ref.hasPrefix("@timeref(at: "))
+        XCTAssertTrue(ref.hasSuffix("{[01:05]}"))
+    }
+
+    func testTrailingBracketTimestampDetection() {
+        let text = "See this point [29:43]"
+        let hit = TimenoteFormat.trailingBracketTimestamp(in: text, endingAt: (text as NSString).length)
+        XCTAssertEqual(hit?.seconds, Double(29 * 60 + 43))
+        XCTAssertEqual((text as NSString).substring(with: hit!.range), "[29:43]")
+
+        XCTAssertEqual(TimenoteFormat.trailingBracketTimestamp(in: "[1:02:03]", endingAt: 9)?.seconds, Double(3723))
+        XCTAssertNil(TimenoteFormat.trailingBracketTimestamp(in: "[not a time]", endingAt: 12))
+        XCTAssertNil(TimenoteFormat.trailingBracketTimestamp(in: "mid [29:43] text", endingAt: 16), "Only a trailing token converts")
+    }
+
     func testBracketedTimestampFormats() {
         XCTAssertEqual(TimenoteFormat.bracketedTimestamp(0), "[00:00]")
         XCTAssertEqual(TimenoteFormat.bracketedTimestamp(65.25), "[01:05]")

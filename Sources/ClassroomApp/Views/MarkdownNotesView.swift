@@ -69,12 +69,12 @@ struct MarkdownNotesView: View {
     private static let inlineConfiguration = MarkdownEditorConfiguration(
         heightBehavior: .fitsContent,
         extensions: [HighlightExtension(), StrikethroughExtension()],
-        directives: [TimenoteDirective(), PageQuoteDirective()]
+        directives: [TimenoteDirective(), TimeRefDirective(), PageQuoteDirective()]
     )
     private static let scrollingConfiguration = MarkdownEditorConfiguration(
         heightBehavior: .scrolls,
         extensions: [HighlightExtension(), StrikethroughExtension()],
-        directives: [TimenoteDirective(), PageQuoteDirective()]
+        directives: [TimenoteDirective(), TimeRefDirective(), PageQuoteDirective()]
     )
     private var configuration: MarkdownEditorConfiguration {
         scrollsInternally ? Self.scrollingConfiguration : Self.inlineConfiguration
@@ -262,18 +262,30 @@ struct MarkdownNotesView: View {
     /// delegate), so this detects the just-completed `/timenote\n` and swaps
     /// it for the directive line a moment later instead.
     private func handleTextMutation(_ mutation: MarkdownTextMutation) {
-        guard let onTimenoteSlashCommand, mutation.replacement == "\n", mutation.range.location > 0 else {
+        // Both conversions are Notes-only (the slash command is wired there).
+        guard let onTimenoteSlashCommand else {
             return
         }
-
         let ns = text as NSString
-        let lineRange = ns.lineRange(for: NSRange(location: mutation.range.location - 1, length: 0))
-        let line = ns.substring(with: lineRange)
-        guard line.hasSuffix("\n"), line.dropLast() == "/timenote" else {
+
+        // `/timenote` + Enter → a blockquote timenote line.
+        if mutation.replacement == "\n", mutation.range.location > 0 {
+            let lineRange = ns.lineRange(for: NSRange(location: mutation.range.location - 1, length: 0))
+            let line = ns.substring(with: lineRange)
+            if line.hasSuffix("\n"), line.dropLast() == "/timenote" {
+                text = ns.replacingCharacters(in: lineRange, with: onTimenoteSlashCommand())
+                onTextChange()
+            }
             return
         }
 
-        text = ns.replacingCharacters(in: lineRange, with: onTimenoteSlashCommand())
-        onTextChange()
+        // A just-typed/pasted `[MM:SS]` → an inline clickable time reference.
+        if mutation.replacement.hasSuffix("]") {
+            let end = mutation.range.location + (mutation.replacement as NSString).length
+            if let hit = TimenoteFormat.trailingBracketTimestamp(in: text, endingAt: end) {
+                text = ns.replacingCharacters(in: hit.range, with: TimenoteFormat.inlineTimeRef(seconds: hit.seconds))
+                onTextChange()
+            }
+        }
     }
 }
