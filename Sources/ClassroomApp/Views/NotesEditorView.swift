@@ -19,6 +19,15 @@ struct NotesEditorView: View {
     var scrollsInternally: Bool = false
 
     var body: some View {
+        if scrollsInternally {
+            editorStack
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            editorStack
+        }
+    }
+
+    private var editorStack: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Notes")
@@ -33,7 +42,7 @@ struct NotesEditorView: View {
                 }
             }
 
-            MarkdownNotesView(
+            let editor = MarkdownNotesView(
                 text: Binding(
                     get: { viewModel.noteText },
                     set: { viewModel.updateNoteText($0) }
@@ -48,11 +57,14 @@ struct NotesEditorView: View {
                 focusRequest: focusRequest,
                 onFocusChange: onFocusChange
             )
-            .frame(
-                maxWidth: scrollsInternally ? .infinity : nil,
-                minHeight: scrollsInternally ? nil : editorHeight,
-                maxHeight: scrollsInternally ? .infinity : editorHeight
-            )
+
+            Group {
+                if scrollsInternally {
+                    editor.frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    editor.frame(minHeight: editorHeight, maxHeight: editorHeight)
+                }
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(isTargeted ? Color.accentColor : Color.clear, lineWidth: 2)
@@ -75,6 +87,5 @@ struct NotesEditorView: View {
                     .foregroundStyle(.red)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: scrollsInternally ? .infinity : nil, alignment: .topLeading)
     }
 }

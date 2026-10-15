@@ -20,6 +20,15 @@ struct PageEditorView: View {
     var scrollsInternally: Bool = false
 
     var body: some View {
+        if scrollsInternally {
+            editorStack
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            editorStack
+        }
+    }
+
+    private var editorStack: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Page")
@@ -34,7 +43,7 @@ struct PageEditorView: View {
                 }
             }
 
-            MarkdownNotesView(
+            let editor = MarkdownNotesView(
                 text: Binding(
                     get: { viewModel.pageText },
                     set: { viewModel.updatePageText($0) }
@@ -49,11 +58,12 @@ struct PageEditorView: View {
                 scrollsInternally: scrollsInternally,
                 onFocusChange: onFocusChange
             )
-            .frame(
-                maxWidth: scrollsInternally ? .infinity : nil,
-                minHeight: scrollsInternally ? nil : editorHeight,
-                maxHeight: scrollsInternally ? .infinity : editorHeight
-            )
+
+            if scrollsInternally {
+                editor.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                editor.frame(minHeight: editorHeight, maxHeight: editorHeight)
+            }
 
             if !viewModel.isEditingModule, viewModel.pageText.isEmpty {
                 Text("This lesson has no page content yet.")
@@ -71,6 +81,5 @@ struct PageEditorView: View {
                     .foregroundStyle(.red)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: scrollsInternally ? .infinity : nil, alignment: .topLeading)
     }
 }
