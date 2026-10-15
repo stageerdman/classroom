@@ -6,12 +6,15 @@ import SwiftUI
 /// see `ContentSectionSelectionService` for the underlying rules (single
 /// view, or a 2-pane split when two sections are selected).
 struct LessonContentSectionSelector: View {
+    /// The sections this lesson offers, in display order — e.g. Transcript
+    /// is present only when the lesson has a transcript sidecar.
+    let availableSections: [LessonContentSection]
     let selectedSections: [LessonContentSection]
     let onToggle: (LessonContentSection) -> Void
 
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(LessonContentSection.allCases) { section in
+            ForEach(availableSections) { section in
                 let isSelected = selectedSections.contains(section)
 
                 Button(section.title) {

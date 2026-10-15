@@ -145,6 +145,7 @@ struct ClassroomBrowserView: View {
                     }
 
                     LessonContentSectionSelector(
+                        availableSections: viewModel.availableContentSections,
                         selectedSections: viewModel.selectedContentSections,
                         onToggle: viewModel.toggleContentSection
                     )
@@ -168,6 +169,10 @@ struct ClassroomBrowserView: View {
                                 onTextChange: scheduleNoteAutosave,
                                 onFocusChange: { isTextEditorFocused = $0 }
                             )
+                        case .transcript:
+                            // Replaced by TranscriptView in Phase 3.
+                            Text("Transcript")
+                                .foregroundStyle(.secondary)
                         }
                     }
 

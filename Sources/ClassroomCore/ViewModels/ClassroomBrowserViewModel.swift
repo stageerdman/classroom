@@ -24,6 +24,8 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     @Published public private(set) var noteText = ""
     @Published public private(set) var isNoteDirty = false
     @Published public private(set) var noteErrorMessage: String?
+    @Published public private(set) var transcriptCues: [TranscriptCue] = []
+    @Published public private(set) var transcriptErrorMessage: String?
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var isEditingModule = false
     @Published public private(set) var pendingTransform: PendingTransform?
@@ -55,6 +57,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     private let metadataStore: MetadataStore
     private let pageService: PageService
     private let notesService: NotesService
+    private let transcriptService: TranscriptService
     private let markdownFileService: MarkdownFileService
     private let editorService: ClassroomEditorService
     private var currentRootURL: URL?
@@ -66,6 +69,7 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         metadataStore: MetadataStore = MetadataStore(),
         pageService: PageService = PageService(),
         notesService: NotesService = NotesService(),
+        transcriptService: TranscriptService = TranscriptService(),
         markdownFileService: MarkdownFileService = MarkdownFileService(),
         editorService: ClassroomEditorService = ClassroomEditorService()
     ) {
@@ -75,9 +79,25 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         self.metadataStore = metadataStore
         self.pageService = pageService
         self.notesService = notesService
+        self.transcriptService = transcriptService
         self.markdownFileService = markdownFileService
         self.editorService = editorService
         self.recentClassrooms = recentStore.list()
+    }
+
+    /// Which content sections the current lesson actually offers, in fixed
+    /// display order. Page and Notes are always available; Transcript only
+    /// when the lesson has a transcript sidecar. Drives the section selector
+    /// so the Transcript chip appears exactly when there's a transcript.
+    public var availableContentSections: [LessonContentSection] {
+        LessonContentSection.allCases.filter { section in
+            switch section {
+            case .page, .notes:
+                return true
+            case .transcript:
+                return selectedLesson?.transcriptURL != nil
+            }
+        }
     }
 
     public func openFolder(_ url: URL) {
@@ -1007,6 +1027,40 @@ public final class ClassroomBrowserViewModel: ObservableObject {
     private func loadLessonContentForSelectedLesson() {
         loadNotesForSelectedLesson()
         loadPageForSelectedLesson()
+        loadTranscriptForSelectedLesson()
+        pruneContentSectionsForSelectedLesson()
+    }
+
+    private func loadTranscriptForSelectedLesson() {
+        guard let selectedLesson else {
+            transcriptCues = []
+            transcriptErrorMessage = nil
+            return
+        }
+
+        do {
+            transcriptCues = try transcriptService.loadCues(for: selectedLesson)
+            // A transcript that exists but parsed to nothing is a content
+            // problem worth surfacing quietly in the pane; a lesson with no
+            // transcript file at all simply has no cues and no error.
+            transcriptErrorMessage = (selectedLesson.transcriptURL != nil && transcriptCues.isEmpty)
+                ? "This transcript couldn't be read."
+                : nil
+        } catch {
+            transcriptCues = []
+            transcriptErrorMessage = "This transcript couldn't be read."
+        }
+    }
+
+    /// Drops any selected section the current lesson doesn't offer (e.g. a
+    /// `.transcript` selection carried over from a lesson that had one),
+    /// never leaving the selection empty.
+    private func pruneContentSectionsForSelectedLesson() {
+        let available = availableContentSections
+        let pruned = selectedContentSections.filter { available.contains($0) }
+        if pruned != selectedContentSections {
+            selectedContentSections = pruned.isEmpty ? [.page] : pruned
+        }
     }
 
     private func loadNotesForSelectedLesson() {
@@ -1105,6 +1159,8 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         pageText = ""
         isPageDirty = false
         pageErrorMessage = nil
+        transcriptCues = []
+        transcriptErrorMessage = nil
     }
 
     private func updateProgressSummaries() {

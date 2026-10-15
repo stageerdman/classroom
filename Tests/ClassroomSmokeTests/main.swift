@@ -505,6 +505,60 @@ await MainActor.run {
     expect(notesViewModel.selectedContentSections.contains(.notes), "Inserting a timenote should ensure Notes is visible even if it wasn't before")
 }
 
+// MARK: - Transcript: discovery, availability, cue loading, section pruning
+
+let transcriptRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
+try makeLessonFolder(at: transcriptRoot, "Module/WithTranscript")
+try makeLessonFolder(at: transcriptRoot, "Module/NoTranscript")
+try Data("**Obchodník** [00:05]\nAhoj.\n\n**Klient** [00:12]\nZdravím.".utf8)
+    .write(to: lessonFolderURL(at: transcriptRoot, "Module/WithTranscript").appendingPathComponent("WithTranscript.md"))
+
+let transcriptDefaultsSuite = "ClassroomTranscriptSmokeTests.\(UUID().uuidString)"
+guard let transcriptDefaults = UserDefaults(suiteName: transcriptDefaultsSuite) else {
+    fatalError("Could not create transcript smoke test user defaults")
+}
+defer {
+    transcriptDefaults.removePersistentDomain(forName: transcriptDefaultsSuite)
+}
+
+let transcriptViewModel = await MainActor.run {
+    ClassroomBrowserViewModel(
+        recentStore: RecentClassroomStore(userDefaults: transcriptDefaults),
+        accessStore: NoopFolderAccessStore()
+    )
+}
+
+await MainActor.run {
+    transcriptViewModel.openFolder(transcriptRoot)
+    transcriptViewModel.openModule("Module")
+
+    guard
+        let module = transcriptViewModel.selectedModule,
+        let withTranscript = module.directLessons.first(where: { $0.relativePath == "Module/WithTranscript" }),
+        let noTranscript = module.directLessons.first(where: { $0.relativePath == "Module/NoTranscript" })
+    else {
+        fatalError("Expected WithTranscript and NoTranscript lessons for transcript tests")
+    }
+
+    transcriptViewModel.selectLesson(withTranscript)
+    expect(transcriptViewModel.selectedLesson?.transcriptURL?.lastPathComponent == "WithTranscript.md", "A <video>.md sidecar should be discovered as the transcript")
+    expect(transcriptViewModel.availableContentSections.contains(.transcript), "A lesson with a transcript should offer the Transcript section")
+    expect(transcriptViewModel.transcriptCues.count == 2, "The transcript should parse into two cues")
+    expect(transcriptViewModel.transcriptCues.first?.speaker == "Obchodník", "First cue's speaker should parse")
+    expect(transcriptViewModel.transcriptCues.activeCueID(at: 8) == 0, "At 8s the first cue should be active")
+    expect(transcriptViewModel.transcriptCues.activeCueID(at: 12) == 1, "At 12s the second cue should be active")
+    expect(transcriptViewModel.transcriptErrorMessage == nil, "A well-formed transcript should surface no error")
+
+    transcriptViewModel.toggleContentSection(.transcript)
+    expect(transcriptViewModel.selectedContentSections.contains(.transcript), "Toggling should select the Transcript section")
+
+    transcriptViewModel.selectLesson(noTranscript)
+    expect(!transcriptViewModel.availableContentSections.contains(.transcript), "A lesson without a transcript should not offer the Transcript section")
+    expect(transcriptViewModel.transcriptCues.isEmpty, "A lesson without a transcript should load no cues")
+    expect(!transcriptViewModel.selectedContentSections.contains(.transcript), "A carried-over Transcript selection should be pruned on a lesson that has none")
+    expect(!transcriptViewModel.selectedContentSections.isEmpty, "Pruning must never leave the content selection empty")
+}
+
 // MARK: - Ordering: saved order keyed by lesson folder name
 
 let orderingRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)

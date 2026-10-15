@@ -6,6 +6,7 @@ import Foundation
 public enum LessonContentSection: String, CaseIterable, Equatable, Identifiable {
     case page
     case notes
+    case transcript
 
     public var id: String { rawValue }
 
@@ -13,6 +14,7 @@ public enum LessonContentSection: String, CaseIterable, Equatable, Identifiable 
         switch self {
         case .page: return "Page"
         case .notes: return "Notes"
+        case .transcript: return "Transcript"
         }
     }
 }

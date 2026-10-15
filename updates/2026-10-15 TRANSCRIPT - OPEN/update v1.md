@@ -80,15 +80,24 @@ Status: ☐ todo · ◐ in progress · ☑ done
       parentheticals, inline `[nesrozumitelné]`, H:MM:SS + fractional,
       preamble, non-header bold line, empty, active-cue lookup. 11 tests.
 
-### Phase 2 — ViewModel & section availability  ◐
-- [ ] `LessonContentSection.transcript` + title.
-- [ ] Inject `TranscriptService`; `@Published transcriptCues`;
-      `loadTranscriptForSelectedLesson()` in the load flow.
-- [ ] `availableSections` so the Transcript chip renders only when a
-      transcript exists; `LessonContentSectionSelector` honors it.
-- [ ] Tests: load flow populates cues; availability reflects `transcriptURL`.
+### Phase 2 — ViewModel & section availability  ☑
+- [x] `LessonContentSection.transcript` + title.
+- [x] Inject `TranscriptService`; `@Published transcriptCues` +
+      `transcriptErrorMessage`; `loadTranscriptForSelectedLesson()` in the
+      load flow; clear on lesson deselect.
+- [x] `availableContentSections` so the Transcript chip renders only when a
+      transcript exists; `LessonContentSectionSelector` honors it; stale
+      `.transcript` selections pruned on lesson switch (never empty).
+- [x] Tests: transcript smoke scenario in `main.swift` — discovery,
+      availability, cue parse, active-cue lookup, toggle, prune-on-switch.
+      (Temporary `Text("Transcript")` placeholder in the pane switch, replaced
+      in Phase 3.)
 
-### Phase 3 — Cue rendering (TranscriptView, static)  ☐
+Note: `swift test` has one PRE-EXISTING unrelated failure
+(`SmokeTests.testAttachmentsOnlyExposedWhenNonEmpty`) — logged in
+`issues.txt`. All transcript tests pass.
+
+### Phase 3 — Cue rendering (TranscriptView, static)  ◐
 - [ ] `TranscriptCueRow` per the wiki spec (name color, timestamp pill
       rest/hover, parenthetical, body, same-speaker grouping, active-cue
       highlight bar + tint).
