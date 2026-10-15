@@ -23,6 +23,10 @@ struct ClassroomBrowserView: View {
     /// Page∥Notes split: `true` keeps both panes in one shared scroll (they
     /// move together, the default); `false` gives each pane its own scroll.
     @State private var scrollLinked = true
+    /// A Page passage a Notes quote chip asked to reveal, applied to the Page
+    /// editor when `pageQuoteRequest` bumps.
+    @State private var pageQuoteTarget: String?
+    @State private var pageQuoteRequest = 0
 
     var body: some View {
         Group {
@@ -277,7 +281,10 @@ struct ClassroomBrowserView: View {
             PageEditorView(
                 viewModel: viewModel,
                 editorHeight: $pageEditorHeight,
-                onTextChange: schedulePageAutosave
+                onTextChange: schedulePageAutosave,
+                onCommentOnSelection: commentOnPageSelection,
+                scrollToText: pageQuoteTarget,
+                scrollRequest: pageQuoteRequest
             )
         case .notes:
             NotesEditorView(
@@ -286,7 +293,8 @@ struct ClassroomBrowserView: View {
                 editorHeight: $noteEditorHeight,
                 isTargeted: $isTargetedNotes,
                 focusRequest: noteFocusRequest,
-                onTextChange: scheduleNoteAutosave
+                onTextChange: scheduleNoteAutosave,
+                onPageQuoteClick: revealPageQuote
             )
         case .transcript:
             TranscriptView(
@@ -299,6 +307,21 @@ struct ClassroomBrowserView: View {
             // lessons with the transcript tab already open.
             .id(viewModel.selectedLesson?.relativePath)
         }
+    }
+
+    /// Page → Notes: the floating Comment button fired with the selected
+    /// passage. Append a quote-comment block to Notes and focus it to type.
+    private func commentOnPageSelection(_ quote: String) {
+        viewModel.insertPageQuoteComment(quote: quote)
+        noteFocusRequest += 1
+    }
+
+    /// Notes → Page: a quote chip was clicked. Make sure Page is on screen and
+    /// ask it to scroll to the quoted passage.
+    private func revealPageQuote(_ quote: String) {
+        viewModel.ensureContentSectionVisible(.page)
+        pageQuoteTarget = quote
+        pageQuoteRequest += 1
     }
 
     private func lessonHeader(_ lesson: Lesson) -> some View {

@@ -8,6 +8,13 @@ struct PageEditorView: View {
     @Binding var editorHeight: CGFloat
     let onTextChange: () -> Void
     var onFocusChange: (Bool) -> Void = { _ in }
+    /// Selecting text in Page offers a floating "Comment" button; this fires
+    /// with the selected text to start a comment on it in Notes.
+    var onCommentOnSelection: ((String) -> Void)?
+    /// A quoted passage to scroll to (from a Notes quote chip), applied when
+    /// `scrollRequest` changes.
+    var scrollToText: String?
+    var scrollRequest: Int = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -33,6 +40,9 @@ struct PageEditorView: View {
                 onTextChange: onTextChange,
                 documentId: "page:\(viewModel.selectedLesson?.relativePath ?? "none")",
                 isEditable: viewModel.isEditingModule,
+                onCommentOnSelection: onCommentOnSelection,
+                scrollToText: scrollToText,
+                scrollRequest: scrollRequest,
                 onFocusChange: onFocusChange
             )
             .frame(minHeight: editorHeight, maxHeight: editorHeight)

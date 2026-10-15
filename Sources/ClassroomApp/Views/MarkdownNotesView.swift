@@ -29,6 +29,18 @@ struct MarkdownNotesView: View {
     /// Fires when a rendered timenote pill is clicked, with the timestamp
     /// in seconds — the caller seeks playback to it.
     var onTimenoteClick: ((Double) -> Void)?
+    /// Fires when a rendered page-quote chip is clicked, with the quoted text
+    /// — the caller scrolls the Page to that passage.
+    var onPageQuoteClick: ((String) -> Void)?
+    /// When non-nil, a floating "Comment" button appears above the current
+    /// selection; clicking it calls this with the selected text. Only the
+    /// Page editor wires this up.
+    var onCommentOnSelection: ((String) -> Void)?
+    /// Text to scroll into view (and briefly select) when `scrollRequest`
+    /// changes — used to jump the Page to a quoted passage from a Notes chip.
+    var scrollToText: String?
+    /// Bumped by the caller to trigger a `scrollToText` jump.
+    var scrollRequest: Int = 0
     /// Bumped by the caller to move focus into this editor and place the
     /// cursor at the end — used after inserting a timenote from the
     /// transport bar's comment button so the user can start typing.
@@ -42,11 +54,13 @@ struct MarkdownNotesView: View {
     @State private var locatedTextView: NSTextView?
     @State private var beginEditingObserver: NSObjectProtocol?
     @State private var endEditingObserver: NSObjectProtocol?
+    @State private var commentController = PageSelectionCommentController()
+    @State private var lastScrolledRequest = 0
 
     private static let configuration = MarkdownEditorConfiguration(
         heightBehavior: .fitsContent,
         extensions: [HighlightExtension(), StrikethroughExtension()],
-        directives: [TimenoteDirective()]
+        directives: [TimenoteDirective(), PageQuoteDirective()]
     )
 
     var body: some View {
@@ -74,21 +88,66 @@ struct MarkdownNotesView: View {
             }
         )
         .background(MarkdownTextViewLocator { locatedTextView = $0 })
-        .onChange(of: locatedTextView) { _, newValue in updateFocusObservers(for: newValue) }
+        .onChange(of: locatedTextView) { _, newValue in
+            updateFocusObservers(for: newValue)
+            updateCommentController(for: newValue)
+            maybeScrollToQuotedText()
+        }
         .onChange(of: focusRequest) { _, _ in focusAndMoveCursorToEnd() }
+        .onChange(of: scrollRequest) { _, _ in maybeScrollToQuotedText() }
         .onReceive(NotificationCenter.default.publisher(for: .markdownFormatRequested), perform: handleFormatRequest)
-        .onDisappear { updateFocusObservers(for: nil) }
+        .onDisappear {
+            updateFocusObservers(for: nil)
+            commentController.detach()
+        }
     }
 
     private func handleLinkClick(_ target: String) {
+        if target.hasPrefix(TimenoteDirective.clickTargetPrefix),
+           let seconds = Double(target.dropFirst(TimenoteDirective.clickTargetPrefix.count)) {
+            onTimenoteClick?(seconds)
+            return
+        }
+
+        if target.hasPrefix(PageQuoteFormat.clickTargetPrefix),
+           let quote = PageQuoteFormat.decode(String(target.dropFirst(PageQuoteFormat.clickTargetPrefix.count))) {
+            onPageQuoteClick?(quote)
+            return
+        }
+    }
+
+    /// Attaches/detaches the floating "Comment" selection button as the Page
+    /// editor's text view comes and goes.
+    private func updateCommentController(for textView: NSTextView?) {
+        guard let onCommentOnSelection else {
+            commentController.detach()
+            return
+        }
+        if let textView {
+            commentController.attach(to: textView, onComment: onCommentOnSelection)
+        } else {
+            commentController.detach()
+        }
+    }
+
+    /// Scrolls the located text view to the first occurrence of `scrollToText`
+    /// and briefly flashes it, so a Notes quote chip can reveal the passage in
+    /// the Page. Fires once per `scrollRequest` — whichever happens last, the
+    /// request bump or the text view being located (Page may have just been
+    /// revealed), triggers it.
+    private func maybeScrollToQuotedText() {
         guard
-            target.hasPrefix(TimenoteDirective.clickTargetPrefix),
-            let seconds = Double(target.dropFirst(TimenoteDirective.clickTargetPrefix.count))
+            scrollRequest != lastScrolledRequest,
+            let locatedTextView,
+            let scrollToText,
+            let range = PageQuoteFormat.range(ofQuote: scrollToText, in: locatedTextView.string)
         else {
             return
         }
 
-        onTimenoteClick?(seconds)
+        lastScrolledRequest = scrollRequest
+        locatedTextView.scrollRangeToVisible(range)
+        locatedTextView.showFindIndicator(for: range)
     }
 
     /// The engine ships no built-in right-click menu (API-only, by design —

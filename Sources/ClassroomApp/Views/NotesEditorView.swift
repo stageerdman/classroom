@@ -11,6 +11,9 @@ struct NotesEditorView: View {
     let focusRequest: Int
     let onTextChange: () -> Void
     var onFocusChange: (Bool) -> Void = { _ in }
+    /// Clicking a page-quote chip in Notes fires this with the quoted text so
+    /// the caller can reveal the passage in Page.
+    var onPageQuoteClick: ((String) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -37,6 +40,7 @@ struct NotesEditorView: View {
                 documentId: "notes:\(viewModel.selectedLesson?.relativePath ?? "none")",
                 onTimenoteSlashCommand: { TimenoteFormat.linePrefix(timestampSeconds: playbackService.currentTimeSeconds) },
                 onTimenoteClick: { playbackService.seek(to: $0, precise: true) },
+                onPageQuoteClick: onPageQuoteClick,
                 focusRequest: focusRequest,
                 onFocusChange: onFocusChange
             )

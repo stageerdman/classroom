@@ -935,6 +935,20 @@ public final class ClassroomBrowserViewModel: ObservableObject {
         ensureContentSectionVisible(.notes)
     }
 
+    /// Appends a page-quote comment line to Notes (the quoted passage as a
+    /// clickable chip, ready for the user's comment) and makes Notes visible.
+    /// Focus/cursor placement is left to the caller.
+    public func insertPageQuoteComment(quote: String) {
+        guard selectedLesson != nil else {
+            return
+        }
+
+        let separator = noteText.isEmpty || noteText.hasSuffix("\n") ? "" : "\n"
+        updateNoteText(noteText + separator + PageQuoteFormat.linePrefix(quote: quote))
+        saveSelectedNoteExplicitly()
+        ensureContentSectionVisible(.notes)
+    }
+
     public func ensureContentSectionVisible(_ section: LessonContentSection) {
         guard !selectedContentSections.contains(section) else {
             return
