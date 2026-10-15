@@ -150,6 +150,30 @@ Needs real-app manual verification (the AppKit live-scroll bridge and
 - [x] Rebuilt `Classroom.app` launcher via `scripts/create-launcher-app.sh`.
 - [ ] **User:** relaunch `Classroom.app` and run the manual checklist below.
 
+## Follow-up enhancements (2026-10-15, post-transcript)
+
+Shipped on top of the transcript core, same update:
+
+- **Arrow-key fix.** Left/Right arrows now move the text cursor whenever a
+  text view is focused and only skip the video otherwise — replaced the
+  fragile "editing-began" flag with an app-wide key monitor keyed on the
+  first responder (`ClassroomBrowserView.handleArrowKey`).
+- **Unified timestamp format.** One shared `TimenoteFormat.bracketedTimestamp`
+  renders `[MM:SS]` / `[HH:MM:SS]` for both the transcript (format fixed by
+  video length) and Notes timenotes (per-stamp). Existing timenotes upgrade
+  from the old `{HH:MM:SS.mmm}` body on load.
+- **Link/unlink split scroll.** A toggle by the chips for a Page∥Notes split:
+  linked = shared scroll (default), unlinked = pinned layout with each pane
+  scrolling on its own.
+- **Highlight-to-comment.** Select Page text → floating Comment button →
+  quote chip + comment appended to Notes; clicking the chip reveals the
+  passage in Page. `PageQuoteFormat` (base64 ref + whitespace-tolerant match),
+  `PageQuoteDirective`, `PageSelectionCommentController`.
+
+Needs real-app manual verification (floating-button placement, click-to-seek
+precision, scroll-to-quote, link/unlink layout) — the AppKit bits can't be
+unit-tested.
+
 ## Manual verification checklist
 
 Drop a `.md` named like a lesson's video into that lesson's folder, re-open

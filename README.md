@@ -96,9 +96,17 @@ right-click also offers headings, lists, links, images, code blocks, and
 horizontal rules — everything swift-markdown-engine's formatting actions
 support, matching its own (unshipped) built-in menu.
 
+When Page and Notes are shown together, a **link toggle** by the section
+chips switches between scrolling the two panes together (linked, the default)
+and scrolling each independently (unlinked). Selecting text in **Page** pops
+up a **Comment** button: it drops the quoted passage into Notes as a
+clickable chip followed by your comment, and clicking that chip jumps Page
+back to the passage.
+
 Notes support **timenotes** — lines that link back to a moment in the
-lesson's video/audio: `> @timenote(at: SECONDS){HH:MM:SS.mmm} your note text`,
-rendered as a clickable timestamp pill that seeks playback. Create one by
+lesson's video/audio: `> @timenote(at: SECONDS){[MM:SS]} your note text`,
+rendered as a clickable `[MM:SS]`/`[HH:MM:SS]` pill (the same format as the
+transcript) that seeks playback. Create one by
 clicking the comment-bubble button in the video transport bar (inserts a
 timenote at the current position — no longer auto-focuses Notes, see the
 update note above), or by typing `/timenote` and pressing Enter inside
