@@ -47,6 +47,15 @@ struct TranscriptView: View {
         cues.activeCueID(at: playbackService.currentTimeSeconds)
     }
 
+    /// Show `HH:MM:SS` for every cue once the video (or the transcript's own
+    /// span, if the duration isn't known yet) runs an hour or longer, so the
+    /// timestamp column uses one consistent format throughout — otherwise
+    /// `MM:SS`.
+    private var usesHours: Bool {
+        let span = max(playbackService.durationSeconds ?? 0, cues.last?.startSeconds ?? 0)
+        return span >= 3600
+    }
+
     var body: some View {
         Group {
             if let errorMessage {
@@ -71,6 +80,7 @@ struct TranscriptView: View {
                             isFirst: index == 0,
                             isActive: cue.id == activeCueID,
                             speakerColor: speakerColors[cue.speaker] ?? .primary,
+                            usesHours: usesHours,
                             canSeek: canSeek,
                             onSeek: { seek(to: cue, proxy: proxy) }
                         )
@@ -271,6 +281,7 @@ private struct TranscriptCueRow: View {
     let isFirst: Bool
     let isActive: Bool
     let speakerColor: Color
+    let usesHours: Bool
     let canSeek: Bool
     let onSeek: () -> Void
 
@@ -302,7 +313,7 @@ private struct TranscriptCueRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 12)
-                TranscriptTimestampButton(seconds: cue.startSeconds, color: speakerColor, canSeek: canSeek, onSeek: onSeek)
+                TranscriptTimestampButton(seconds: cue.startSeconds, color: speakerColor, usesHours: usesHours, canSeek: canSeek, onSeek: onSeek)
             }
 
             Text(cue.text)
@@ -340,6 +351,7 @@ private struct TranscriptTimestampButton: View {
     /// Matches the cue's speaker color so the timestamp reads as part of that
     /// speaker's turn rather than a fixed accent.
     let color: Color
+    let usesHours: Bool
     let canSeek: Bool
     let onSeek: () -> Void
 
@@ -347,7 +359,7 @@ private struct TranscriptTimestampButton: View {
 
     var body: some View {
         Button(action: onSeek) {
-            Text(Self.label(for: seconds))
+            Text(Self.label(for: seconds, usesHours: usesHours))
                 .font(.system(size: 11, weight: .semibold).monospacedDigit())
                 .foregroundStyle(canSeek ? color : Color.secondary)
                 .padding(.horizontal, 5)
@@ -370,15 +382,16 @@ private struct TranscriptTimestampButton: View {
         }
     }
 
-    /// `MM:SS` (minutes zero-padded so the mono-digit column stays aligned),
-    /// `H:MM:SS` past an hour. Wrapped in brackets to match the source style.
-    static func label(for seconds: Double) -> String {
+    /// `[HH:MM:SS]` when `usesHours` (the whole transcript is in that format
+    /// for a long video), otherwise `[MM:SS]`. Minutes/hours zero-padded so
+    /// the mono-digit column stays aligned.
+    static func label(for seconds: Double, usesHours: Bool) -> String {
         let total = max(0, Int(seconds.rounded()))
         let hours = total / 3600
         let minutes = (total % 3600) / 60
         let secs = total % 60
-        if hours > 0 {
-            return String(format: "[%d:%02d:%02d]", hours, minutes, secs)
+        if usesHours {
+            return String(format: "[%02d:%02d:%02d]", hours, minutes, secs)
         }
         return String(format: "[%02d:%02d]", minutes, secs)
     }
