@@ -18,9 +18,17 @@ struct TranscriptView: View {
 
     @StateObject private var follow = TranscriptFollowCoordinator()
 
-    /// First distinct speaker → accent, the rest → primary. A quiet, two-tone
-    /// "who's talking" signal that doesn't try to scale a palette to N voices.
+    /// Each distinct speaker gets its own color from `speakerPalette`, so a
+    /// glance down the left margin tells turns apart by who's talking.
     private let speakerColors: [String: Color]
+
+    /// A small, deliberate palette (system colors — legible as label tints in
+    /// both light and dark mode). Assigned in order of first appearance, so
+    /// the two main speakers get the two most-distinct leading hues; wraps
+    /// around for transcripts with many names.
+    private static let speakerPalette: [Color] = [
+        .blue, .pink, .teal, .orange, .purple, .green, .indigo, .brown
+    ]
 
     init(cues: [TranscriptCue], playbackService: PlaybackService, errorMessage: String?) {
         self.cues = cues
@@ -157,8 +165,10 @@ struct TranscriptView: View {
 
     private static func makeSpeakerColors(from cues: [TranscriptCue]) -> [String: Color] {
         var colors: [String: Color] = [:]
+        var nextIndex = 0
         for cue in cues where colors[cue.speaker] == nil {
-            colors[cue.speaker] = colors.isEmpty ? .accentColor : .primary
+            colors[cue.speaker] = speakerPalette[nextIndex % speakerPalette.count]
+            nextIndex += 1
         }
         return colors
     }

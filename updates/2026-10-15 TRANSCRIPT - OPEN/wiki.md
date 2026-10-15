@@ -53,9 +53,12 @@ One calm left-aligned reading column (play-script, not chat):
 - **Header row:** speaker name (left) + optional `(paren)` + `Spacer()` +
   timestamp (right, same baseline). Body paragraph below at the same left
   margin (no indent).
-- **Speaker color:** Obchodník → `controlAccentColor`; Klient → `.primary`;
-  any other/unknown name → `.primary`. Color lives ONLY on the name token;
-  body is always `.primary`.
+- **Speaker color:** each distinct speaker gets its own color from a small
+  system-color palette (`[.blue, .pink, .teal, .orange, .purple, .green,
+  .indigo, .brown]`), assigned by order of first appearance and wrapping for
+  many names. Color lives ONLY on the name token; body is always `.primary`.
+  (Superseded the original two-tone accent/primary scheme at the user's
+  request — per-speaker color coding.)
 - **Same-speaker grouping:** when the next cue is the same speaker, suppress
   the name but keep the timestamp; use the tighter vertical gap.
 - **Timestamp affordance:** at rest, bare accent mono-digit text

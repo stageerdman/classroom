@@ -157,8 +157,9 @@ the classroom, select the lesson, then:
 
 1. **Chip appears** only for lessons that have the transcript file; absent
    otherwise.
-2. **Rendering** — speakers colored (first speaker accent, other primary),
-   repeated same-speaker labels suppressed, `(interrupting)` muted-italic,
+2. **Rendering** — each speaker's name color-coded from a fixed palette
+   (stable by order of first appearance), repeated same-speaker labels
+   suppressed, `(interrupting)` muted-italic,
    timestamps right-aligned; readable in light *and* dark mode.
 3. **Click-to-seek** — clicking a `[MM:SS]` jumps the video there; hovering a
    timestamp shows the pill + pointing-hand cursor.

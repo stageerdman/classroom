@@ -121,7 +121,8 @@ migration; a `page.mp4`/`note.mp4` video keeps its authored `page.md`/`note.md`
 rather than adopting it as a transcript).
 
 The transcript is a conversation rendered as timestamped **cues**. Each cue is
-a header line — a bold speaker name, a `[MM:SS]` (or `[H:MM:SS]`) timestamp,
+a header line — a bold speaker name (color-coded per speaker), a `[MM:SS]`
+(or `[H:MM:SS]`) timestamp,
 and an optional annotation like `(interrupting)` — followed by the spoken
 text:
 
