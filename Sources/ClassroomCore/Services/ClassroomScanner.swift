@@ -16,6 +16,11 @@ public struct ClassroomScanner {
     public static let moduleDescriptionFileName = "description.md"
     public static let pageFileName = "page.md"
     public static let noteFileName = "note.md"
+    /// Base names (no extension) of the reserved markdown files — used by the
+    /// transcript collision guard so a `page.mp4`/`note.mp4` video doesn't
+    /// adopt the authored Page / Notes file as its transcript.
+    public static let pageFileBaseName = "page"
+    public static let noteFileBaseName = "note"
     /// What counts as a lesson's playable media on disk — not the same as
     /// what AVFoundation can actually *play*. `flv` in particular scans in
     /// here (so a lesson with only a `.flv` video isn't silently treated as
@@ -131,7 +136,12 @@ public struct ClassroomScanner {
             )
         }
 
-        let (pageURL, noteURL, legacyPageWarning) = resolvePageAndNoteURLs(fileChildren: fileChildren)
+        let transcriptURL = resolveTranscriptURL(media: mediaCandidates.first, fileChildren: fileChildren)
+
+        let (pageURL, noteURL, legacyPageWarning) = resolvePageAndNoteURLs(
+            fileChildren: fileChildren,
+            excluding: transcriptURL
+        )
         if let legacyPageWarning {
             warnings.append(ClassroomWarning(kind: .ambiguousLessonNotes, relativePath: lessonRelativePath, message: legacyPageWarning))
         }
@@ -152,9 +162,37 @@ public struct ClassroomScanner {
             mediaURL: mediaCandidates.first,
             pageURL: pageURL,
             noteURL: noteURL,
+            transcriptURL: transcriptURL,
             attachmentURLs: attachmentURLs,
             title: lessonURL.lastPathComponent
         )
+    }
+
+    /// The lesson's transcript is the markdown file whose base name matches
+    /// the chosen media file's base name (`call.mp4` → `call.md`). Matched
+    /// case-insensitively.
+    ///
+    /// Collision guard: if the media is literally `page.<ext>`/`note.<ext>`
+    /// the derived name would be `page.md`/`note.md`, which are the authored
+    /// Page / viewer Notes files — those win and no transcript is registered,
+    /// so a lesson's own notes are never hijacked as a transcript.
+    private func resolveTranscriptURL(media: URL?, fileChildren: [URL]) -> URL? {
+        guard let media else {
+            return nil
+        }
+
+        let mediaBaseName = media.deletingPathExtension().lastPathComponent
+        guard
+            mediaBaseName.caseInsensitiveCompare(Self.pageFileBaseName) != .orderedSame,
+            mediaBaseName.caseInsensitiveCompare(Self.noteFileBaseName) != .orderedSame
+        else {
+            return nil
+        }
+
+        return fileChildren.first { url in
+            url.pathExtension.lowercased() == "md"
+                && url.deletingPathExtension().lastPathComponent.caseInsensitiveCompare(mediaBaseName) == .orderedSame
+        }
     }
 
     /// Resolves `page.md` / `note.md` by exact (case-insensitive) filename.
@@ -164,8 +202,10 @@ public struct ClassroomScanner {
     /// that's what it actually was under the old single-"Notes" UI. Any
     /// further leftover files are reported as a warning rather than acted
     /// on, so nothing not explicitly `page.md`/`note.md` is ever touched.
-    private func resolvePageAndNoteURLs(fileChildren: [URL]) -> (pageURL: URL?, noteURL: URL?, warning: String?) {
-        let markdownFiles = sortedByFileName(fileChildren.filter { $0.pathExtension.lowercased() == "md" })
+    private func resolvePageAndNoteURLs(fileChildren: [URL], excluding transcriptURL: URL?) -> (pageURL: URL?, noteURL: URL?, warning: String?) {
+        let markdownFiles = sortedByFileName(
+            fileChildren.filter { $0.pathExtension.lowercased() == "md" && $0 != transcriptURL }
+        )
         let explicitPageURL = markdownFiles.first { $0.lastPathComponent.caseInsensitiveCompare(Self.pageFileName) == .orderedSame }
         let noteURL = markdownFiles.first { $0.lastPathComponent.caseInsensitiveCompare(Self.noteFileName) == .orderedSame }
         let legacyCandidates = markdownFiles.filter { $0 != explicitPageURL && $0 != noteURL }

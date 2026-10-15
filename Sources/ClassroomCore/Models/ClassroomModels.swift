@@ -52,13 +52,18 @@ public struct LessonCategory: Equatable {
 /// `ClassroomScanner.lessonMarkerFileName`). The folder may contain at most
 /// one playable media file, a `page.md` (authored lesson content, read-only
 /// outside Module edit mode), a `note.md` (the viewer's own notes, always
-/// editable), and an optional `Attachments` folder.
+/// editable), an optional transcript (`<mediaBaseName>.md` — see
+/// `ClassroomScanner.resolveTranscriptURL`), and an optional `Attachments`
+/// folder.
 public struct Lesson: Equatable {
     public let relativePath: String
     public let folderURL: URL
     public let mediaURL: URL?
     public let pageURL: URL?
     public let noteURL: URL?
+    /// A markdown transcript named like the media file (`call.mp4` →
+    /// `call.md`). `nil` when the lesson has no such sidecar.
+    public let transcriptURL: URL?
     public let attachmentURLs: [URL]
     public let title: String
     public var state: LessonState
@@ -69,6 +74,7 @@ public struct Lesson: Equatable {
         mediaURL: URL?,
         pageURL: URL?,
         noteURL: URL?,
+        transcriptURL: URL? = nil,
         attachmentURLs: [URL] = [],
         title: String,
         state: LessonState = LessonState()
@@ -78,6 +84,7 @@ public struct Lesson: Equatable {
         self.mediaURL = mediaURL
         self.pageURL = pageURL
         self.noteURL = noteURL
+        self.transcriptURL = transcriptURL
         self.attachmentURLs = attachmentURLs
         self.title = title
         self.state = state
