@@ -116,16 +116,26 @@ Note: `swift test` has one PRE-EXISTING unrelated failure
       (Attachments are intentionally not shown in transcript mode — it's a
       focused reading layout; they remain in Page/Notes modes.)
 
-### Phase 5 — Follow / auto-scroll / recenter  ◐
-- [ ] `ScrollViewReader` + comfort-band (middle 60%) recenter; recenter on
-      open (top if nothing played yet).
-- [ ] Detach on genuine user scroll via AppKit `NSScrollView`
-      `willStartLiveScroll`/`didLiveScroll` (macOS 14 — no `ScrollPhase`).
-- [ ] "Jump to current" pill: only while detached AND active cue off-screen.
-- [ ] Re-attach on any seek (incl. click-to-seek), optimistic recenter on the
-      clicked cue.
+### Phase 5 — Follow / auto-scroll / recenter  ☑
+- [x] `ScrollViewReader` + `TranscriptFollowCoordinator`. Recenter on open
+      (top if nothing played yet; upper-third otherwise), one runloop hop so
+      the `LazyVStack` realizes the row. Fresh `.id(lesson)` re-centers on
+      lesson switch.
+- [x] Band via cue-index threshold (recenter only once the active cue is ≥3
+      cues from the last centered one) — cheap stand-in for the geometry band,
+      avoids per-tick scrolling.
+- [x] Detach on genuine user scroll via `NSScrollView`
+      `willStartLiveScroll`/`didLiveScroll` (found with `ScrollViewLocator`;
+      guarded against our own programmatic scrolls).
+- [x] "Jump to current" pill while detached (shown whenever detached with an
+      active cue — the off-screen-only refinement needs row geometry; deferred
+      as it would add a preference-key pass). Re-attach + optimistic recenter
+      on click-to-seek and on the pill.
 
-### Phase 6 — Edge states & docs  ☐
+Needs real-app manual verification (the AppKit live-scroll bridge and
+`scrollTo` centering can't be unit-tested) — see Phase 7.
+
+### Phase 6 — Edge states & docs  ◐
 - [ ] Unparseable/empty transcript → chip still shows, quiet message.
 - [ ] Transcript present but video missing → readable, timestamps inert.
 - [ ] README + `docs/` note; fill `wiki.md` lessons.

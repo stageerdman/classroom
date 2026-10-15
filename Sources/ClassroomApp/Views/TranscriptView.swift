@@ -4,14 +4,19 @@ import SwiftUI
 
 /// A lesson's transcript: a scrolling list of timestamped cues. Clicking a
 /// cue's timestamp seeks the player; the cue at the current playback time is
-/// highlighted. Auto-follow/recenter is layered on in a later phase — this
-/// renders the list and the live highlight.
+/// highlighted; while "following" the list keeps the active cue in view and
+/// recenters when the tab opens. A real user scroll detaches follow until the
+/// user taps "Jump to current" or clicks a timestamp. See
+/// `TranscriptFollowCoordinator` for the follow state and the macOS-14
+/// user-scroll detection.
 struct TranscriptView: View {
     let cues: [TranscriptCue]
     @ObservedObject var playbackService: PlaybackService
     /// A content-level problem (file present but unreadable/empty). Shown in
     /// place of the list.
     let errorMessage: String?
+
+    @StateObject private var follow = TranscriptFollowCoordinator()
 
     /// First distinct speaker → accent, the rest → primary. A quiet, two-tone
     /// "who's talking" signal that doesn't try to scale a palette to N voices.
@@ -41,27 +46,105 @@ struct TranscriptView: View {
             } else if cues.isEmpty {
                 message("This lesson has no transcript.")
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(cues.enumerated()), id: \.element.id) { index, cue in
-                            TranscriptCueRow(
-                                cue: cue,
-                                showsSpeaker: index == 0 || cues[index - 1].speaker != cue.speaker,
-                                isFirst: index == 0,
-                                isActive: cue.id == activeCueID,
-                                speakerColor: speakerColors[cue.speaker] ?? .primary,
-                                canSeek: canSeek,
-                                onSeek: { playbackService.seek(to: cue.startSeconds) }
-                            )
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 8)
-                }
-                .animation(.easeInOut(duration: 0.18), value: activeCueID)
+                transcriptList
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var transcriptList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(cues.enumerated()), id: \.element.id) { index, cue in
+                        TranscriptCueRow(
+                            cue: cue,
+                            showsSpeaker: index == 0 || cues[index - 1].speaker != cue.speaker,
+                            isFirst: index == 0,
+                            isActive: cue.id == activeCueID,
+                            speakerColor: speakerColors[cue.speaker] ?? .primary,
+                            canSeek: canSeek,
+                            onSeek: { seek(to: cue, proxy: proxy) }
+                        )
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8)
+                .background(ScrollViewLocator { follow.attach(to: $0) })
+            }
+            .animation(.easeInOut(duration: 0.18), value: activeCueID)
+            .overlay(alignment: .bottom) { jumpToCurrentPill(proxy: proxy) }
+            .animation(.easeInOut(duration: 0.2), value: follow.isFollowing)
+            .onAppear {
+                follow.reattachToActiveCue()
+                // One runloop hop so the LazyVStack realizes the target row
+                // before scrolling to it on first paint.
+                DispatchQueue.main.async { recenter(animated: false, proxy: proxy) }
+            }
+            .onChange(of: activeCueID) { _, newID in
+                guard follow.isFollowing, let newID, follow.shouldRecenter(forActiveCueID: newID) else {
+                    return
+                }
+                recenter(animated: true, proxy: proxy)
+            }
+            .onDisappear { follow.detach() }
+        }
+    }
+
+    @ViewBuilder
+    private func jumpToCurrentPill(proxy: ScrollViewProxy) -> some View {
+        if !follow.isFollowing, activeCueID != nil {
+            Button {
+                follow.reattachToActiveCue()
+                recenter(animated: true, proxy: proxy)
+            } label: {
+                Label("Jump to current", systemImage: "scope")
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
+            }
+            .buttonStyle(.plain)
+            .padding(.bottom, 12)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
+
+    /// Click-to-seek: an explicit "take me here" intent, so it re-attaches
+    /// follow and recenters optimistically on the clicked cue (the active-cue
+    /// highlight catches up on the next time tick ~0.5s later).
+    private func seek(to cue: TranscriptCue, proxy: ScrollViewProxy) {
+        playbackService.seek(to: cue.startSeconds)
+        follow.reattachToActiveCue()
+        scroll(to: cue.id, anchor: .center, animated: true, proxy: proxy)
+        follow.lastCenteredCueID = cue.id
+    }
+
+    /// Scrolls the active cue into its resting position: the top for the very
+    /// first cue (or before anything has played — no dead space above), the
+    /// upper third otherwise.
+    private func recenter(animated: Bool, proxy: ScrollViewProxy) {
+        guard let firstID = cues.first?.id else {
+            return
+        }
+        let target = activeCueID ?? firstID
+        let restsAtTop = activeCueID == nil || target == firstID
+        let anchor: UnitPoint = restsAtTop ? .top : UnitPoint(x: 0.5, y: 0.4)
+        scroll(to: target, anchor: anchor, animated: animated, proxy: proxy)
+        follow.lastCenteredCueID = activeCueID
+    }
+
+    private func scroll(to id: Int, anchor: UnitPoint, animated: Bool, proxy: ScrollViewProxy) {
+        follow.beginProgrammaticScroll()
+        if animated {
+            withAnimation(.easeInOut(duration: 0.35)) {
+                proxy.scrollTo(id, anchor: anchor)
+            }
+        } else {
+            proxy.scrollTo(id, anchor: anchor)
+        }
+        follow.endProgrammaticScroll()
     }
 
     private func message(_ text: String) -> some View {
@@ -81,6 +164,92 @@ struct TranscriptView: View {
     }
 }
 
+/// Owns the transcript's follow state and tells a user scroll apart from a
+/// programmatic one. A reference type (not `@State`) so the AppKit
+/// notification callbacks see live values.
+@MainActor
+final class TranscriptFollowCoordinator: ObservableObject {
+    /// When true, the list keeps the active cue in view as playback advances.
+    /// A genuine user scroll flips it off; a seek or the "Jump to current"
+    /// pill flips it back on.
+    @Published private(set) var isFollowing = true
+
+    /// The cue the list was last programmatically centered on — the baseline
+    /// for the "only recenter once the active cue has drifted far enough"
+    /// band rule, so short advances don't cause constant scrolling.
+    var lastCenteredCueID: Int?
+
+    /// Recenter once the active cue is this many cues away from where we last
+    /// centered. Because cue ids equal their array index, the gap is just the
+    /// id difference. Approximates the "keep it in the middle band" rule
+    /// without per-row geometry.
+    private let recenterThreshold = 3
+
+    private var isProgrammaticScrolling = false
+    private weak var scrollView: NSScrollView?
+    private var observers: [NSObjectProtocol] = []
+
+    func reattachToActiveCue() {
+        isFollowing = true
+    }
+
+    func shouldRecenter(forActiveCueID id: Int) -> Bool {
+        guard let last = lastCenteredCueID else {
+            return true
+        }
+        return abs(id - last) >= recenterThreshold
+    }
+
+    func beginProgrammaticScroll() {
+        isProgrammaticScrolling = true
+    }
+
+    /// Clears the guard a little after the (uncompletable-to-observe) scroll
+    /// animation would have settled — `scrollTo` has no completion callback.
+    func endProgrammaticScroll() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            self?.isProgrammaticScrolling = false
+        }
+    }
+
+    func attach(to scrollView: NSScrollView) {
+        guard self.scrollView !== scrollView else {
+            return
+        }
+        detach()
+        self.scrollView = scrollView
+
+        // The queue is `.main`, so the notification fires on the main thread;
+        // `assumeIsolated` lets the `@Sendable` block call back into this
+        // MainActor-isolated coordinator without an extra async hop.
+        let handler: @Sendable (Notification) -> Void = { [weak self] _ in
+            MainActor.assumeIsolated { self?.userDidScroll() }
+        }
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(
+            forName: NSScrollView.willStartLiveScrollNotification, object: scrollView, queue: .main, using: handler
+        ))
+        observers.append(center.addObserver(
+            forName: NSScrollView.didLiveScrollNotification, object: scrollView, queue: .main, using: handler
+        ))
+    }
+
+    /// Removes the live-scroll observers. Called from the view's `onDisappear`
+    /// (and before re-attaching to a new scroll view).
+    func detach() {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        observers.removeAll()
+        scrollView = nil
+    }
+
+    private func userDidScroll() {
+        guard !isProgrammaticScrolling, isFollowing else {
+            return
+        }
+        isFollowing = false
+    }
+}
+
 /// One transcript cue: a header row (speaker + optional annotation + a
 /// clickable timestamp) over the spoken text. The active cue gets a calm
 /// accent bar + tint.
@@ -95,10 +264,18 @@ private struct TranscriptCueRow: View {
     let canSeek: Bool
     let onSeek: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     /// Tighter rhythm within a speaker's turn, a clear beat between turns.
     private var topPadding: CGFloat {
         if isFirst { return 0 }
         return showsSpeaker ? 20 : 8
+    }
+
+    /// A touch more tint in dark mode — the same accent reads weaker against a
+    /// dark field.
+    private var activeTintOpacity: Double {
+        colorScheme == .dark ? 0.12 : 0.08
     }
 
     var body: some View {
@@ -142,13 +319,6 @@ private struct TranscriptCueRow: View {
             }
         }
         .padding(.top, topPadding)
-    }
-
-    /// A touch more tint in dark mode — the same accent reads weaker against a
-    /// dark field.
-    @Environment(\.colorScheme) private var colorScheme
-    private var activeTintOpacity: Double {
-        colorScheme == .dark ? 0.12 : 0.08
     }
 }
 

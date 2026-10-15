@@ -252,6 +252,10 @@ struct ClassroomBrowserView: View {
                 playbackService: playbackService,
                 errorMessage: viewModel.transcriptErrorMessage
             )
+            // Fresh identity per lesson so the follow state resets and the
+            // view recenters on the new lesson's active cue when switching
+            // lessons with the transcript tab already open.
+            .id(viewModel.selectedLesson?.relativePath)
         }
     }
 
