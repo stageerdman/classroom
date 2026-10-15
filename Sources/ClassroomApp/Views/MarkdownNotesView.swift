@@ -46,10 +46,6 @@ struct MarkdownNotesView: View {
     /// to fit its content and relies on an enclosing page scroll
     /// (`.fitsContent`).
     var scrollsInternally: Bool = false
-    /// Optional scroll-link coordination for a split: this editor registers
-    /// its scroll view under `scrollSyncPane` so the panes can move together.
-    var scrollSyncController: ScrollSyncController?
-    var scrollSyncPane: Int?
     /// Bumped by the caller to move focus into this editor and place the
     /// cursor at the end — used after inserting a timenote from the
     /// transport bar's comment button so the user can start typing.
@@ -108,7 +104,6 @@ struct MarkdownNotesView: View {
         .onChange(of: locatedTextView) { _, newValue in
             updateFocusObservers(for: newValue)
             updateCommentController(for: newValue)
-            registerScrollSync(for: newValue)
             maybeScrollToQuotedText()
         }
         .onChange(of: focusRequest) { _, _ in focusAndMoveCursorToEnd() }
@@ -132,21 +127,6 @@ struct MarkdownNotesView: View {
             onPageQuoteClick?(quote)
             return
         }
-    }
-
-    /// Registers this editor's scroll view with the split scroll-link
-    /// coordinator (only in `.scrolls` mode, where the editor actually owns a
-    /// scroll view that moves).
-    private func registerScrollSync(for textView: NSTextView?) {
-        guard
-            scrollsInternally,
-            let controller = scrollSyncController,
-            let pane = scrollSyncPane,
-            let scrollView = textView?.enclosingScrollView
-        else {
-            return
-        }
-        controller.register(scrollView, forPane: pane)
     }
 
     /// Attaches/detaches the floating "Comment" selection button as the Page

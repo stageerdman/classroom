@@ -17,8 +17,6 @@ struct NotesEditorView: View {
     /// Fill the available height with an internally-scrolling, caret-tracking
     /// editor (pinned layout) rather than growing to fit an outer scroll.
     var scrollsInternally: Bool = false
-    var scrollSyncController: ScrollSyncController?
-    var scrollSyncPane: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -47,8 +45,6 @@ struct NotesEditorView: View {
                 onTimenoteClick: { playbackService.seek(to: $0, precise: true) },
                 onPageQuoteClick: onPageQuoteClick,
                 scrollsInternally: scrollsInternally,
-                scrollSyncController: scrollSyncController,
-                scrollSyncPane: scrollSyncPane,
                 focusRequest: focusRequest,
                 onFocusChange: onFocusChange
             )

@@ -27,7 +27,6 @@ struct ClassroomBrowserView: View {
     /// editor when `pageQuoteRequest` bumps.
     @State private var pageQuoteTarget: String?
     @State private var pageQuoteRequest = 0
-    @StateObject private var scrollSync = ScrollSyncController()
 
     var body: some View {
         Group {
@@ -157,10 +156,22 @@ struct ClassroomBrowserView: View {
         viewModel.selectedContentSections.count == 2 && !isTranscriptMode
     }
 
+    /// Pin the header/video/selector and give the content pane its own scroll
+    /// region only when the transcript is shown (it follows playback in place)
+    /// or a Page∥Notes split is set to scroll independently. Otherwise the
+    /// whole detail is one vertical scroll — the original, reliable layout.
+    private var usesPinnedLayout: Bool {
+        isTranscriptMode || (isPageNotesSplit && !scrollLinked)
+    }
+
     private var detail: some View {
         Group {
             if let selectedLesson = viewModel.selectedLesson {
-                lessonDetail(selectedLesson)
+                if usesPinnedLayout {
+                    pinnedDetail(selectedLesson)
+                } else {
+                    scrollingDetail(selectedLesson)
+                }
             } else {
                 Text("Select a lesson from the sidebar.")
                     .foregroundStyle(.secondary)
@@ -169,16 +180,40 @@ struct ClassroomBrowserView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear { scrollSync.isLinked = scrollLinked }
-        .onChange(of: scrollLinked) { _, linked in scrollSync.isLinked = linked }
     }
 
-    /// Header, video and the section selector stay pinned at the top; the
-    /// content pane fills the remaining height and each section scrolls
-    /// internally (keeping its caret in view). Attachments sit as a strip
-    /// below. The transcript follows playback here; a Page∥Notes split can be
-    /// linked (panes scroll together) or not via `selectorRow`'s toggle.
-    private func lessonDetail(_ selectedLesson: Lesson) -> some View {
+    /// The original, reliable layout: header, video, selector and content all
+    /// in one vertical scroll. Used for a single Page/Notes section and a
+    /// linked Page∥Notes split (both panes share this scroll).
+    private func scrollingDetail(_ selectedLesson: Lesson) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                lessonHeader(selectedLesson)
+
+                if selectedLesson.mediaURL != nil || viewModel.isEditingModule {
+                    mediaPlayer
+                }
+
+                selectorRow
+
+                LessonContentPane(sections: viewModel.selectedContentSections) { section in
+                    sectionView(section, scrollsInternally: false)
+                }
+
+                if !selectedLesson.attachmentURLs.isEmpty || viewModel.isEditingModule {
+                    attachmentsSection(selectedLesson.attachmentURLs)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(32)
+        }
+    }
+
+    /// Header, video and selector pinned at the top; the content pane fills the
+    /// remaining height and each section scrolls internally. Used for the
+    /// transcript (so it can follow playback without pushing the video away)
+    /// and for an unlinked Page∥Notes split.
+    private func pinnedDetail(_ selectedLesson: Lesson) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             lessonHeader(selectedLesson)
 
@@ -189,13 +224,9 @@ struct ClassroomBrowserView: View {
             selectorRow
 
             LessonContentPane(sections: viewModel.selectedContentSections) { section in
-                sectionView(section)
+                sectionView(section, scrollsInternally: true)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-            if !selectedLesson.attachmentURLs.isEmpty || viewModel.isEditingModule {
-                attachmentsSection(selectedLesson.attachmentURLs)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(32)
@@ -234,7 +265,7 @@ struct ClassroomBrowserView: View {
     }
 
     @ViewBuilder
-    private func sectionView(_ section: LessonContentSection) -> some View {
+    private func sectionView(_ section: LessonContentSection, scrollsInternally: Bool) -> some View {
         switch section {
         case .page:
             PageEditorView(
@@ -244,9 +275,7 @@ struct ClassroomBrowserView: View {
                 onCommentOnSelection: commentOnPageSelection,
                 scrollToText: pageQuoteTarget,
                 scrollRequest: pageQuoteRequest,
-                scrollsInternally: true,
-                scrollSyncController: scrollSync,
-                scrollSyncPane: 0
+                scrollsInternally: scrollsInternally
             )
         case .notes:
             NotesEditorView(
@@ -257,9 +286,7 @@ struct ClassroomBrowserView: View {
                 focusRequest: noteFocusRequest,
                 onTextChange: scheduleNoteAutosave,
                 onPageQuoteClick: revealPageQuote,
-                scrollsInternally: true,
-                scrollSyncController: scrollSync,
-                scrollSyncPane: 1
+                scrollsInternally: scrollsInternally
             )
         case .transcript:
             TranscriptView(

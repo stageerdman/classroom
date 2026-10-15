@@ -18,8 +18,6 @@ struct PageEditorView: View {
     /// Fill the available height with an internally-scrolling, caret-tracking
     /// editor (pinned layout) rather than growing to fit an outer scroll.
     var scrollsInternally: Bool = false
-    var scrollSyncController: ScrollSyncController?
-    var scrollSyncPane: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -49,8 +47,6 @@ struct PageEditorView: View {
                 scrollToText: scrollToText,
                 scrollRequest: scrollRequest,
                 scrollsInternally: scrollsInternally,
-                scrollSyncController: scrollSyncController,
-                scrollSyncPane: scrollSyncPane,
                 onFocusChange: onFocusChange
             )
             .frame(
