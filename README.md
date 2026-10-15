@@ -75,9 +75,11 @@ scanned.
 ### Page and Notes
 
 A lesson's content area has a top selector — **Page**, **Notes**, and
-**Transcript** (the last only when the lesson has a transcript file) — above
-the video/audio player. Selecting one shows it full-width; selecting two
-splits the pane in two. **Page** (`page.md`) is the lesson's authored
+**Transcript** (the last only when the lesson has a transcript file). The
+video/audio player stays pinned at the top while the selected section(s)
+scroll below it (each editor keeps its caret in view as you type);
+attachments sit as a strip beneath. Selecting one section shows it
+full-width; selecting two splits the pane in two. **Page** (`page.md`) is the lesson's authored
 content: read-only unless the containing Module is in edit mode. **Notes**
 (`note.md`) is the viewer's own running notes: always editable, in or out
 of edit mode.
@@ -106,7 +108,9 @@ back to the passage.
 Notes support **timenotes** — lines that link back to a moment in the
 lesson's video/audio: `> @timenote(at: SECONDS){[MM:SS]} your note text`,
 rendered as a clickable `[MM:SS]`/`[HH:MM:SS]` pill (the same format as the
-transcript) that seeks playback. Create one by
+transcript) that seeks playback. Simply typing a bare `[MM:SS]` (or
+`[H:MM:SS]`) in Notes also turns into a clickable pill automatically. Create a
+full timenote by
 clicking the comment-bubble button in the video transport bar (inserts a
 timenote at the current position — no longer auto-focuses Notes, see the
 update note above), or by typing `/timenote` and pressing Enter inside
