@@ -65,5 +65,31 @@ final class TimenoteFormatTests: XCTestCase {
         let text = "Just a regular note.\n> A regular quote."
         XCTAssertEqual(TimenoteFormat.migratingLegacySyntax(in: text), text)
     }
+
+    func testBracketedTimestampFormats() {
+        XCTAssertEqual(TimenoteFormat.bracketedTimestamp(0), "[00:00]")
+        XCTAssertEqual(TimenoteFormat.bracketedTimestamp(65.25), "[01:05]")
+        XCTAssertEqual(TimenoteFormat.bracketedTimestamp(3661), "[01:01:01]")
+        XCTAssertEqual(TimenoteFormat.bracketedTimestamp(65, forcingHours: true), "[00:01:05]")
+    }
+
+    func testLinePrefixUsesBracketedPill() {
+        // The visible pill (directive body) is the bracketed timestamp.
+        XCTAssertTrue(TimenoteFormat.linePrefix(timestampSeconds: 65.25).contains("{[01:05]}"))
+    }
+
+    func testMigratingUpgradesOldMillisecondPillToBracketedPill() {
+        // A current-syntax directive saved with the old HH:MM:SS.mmm body.
+        let old = "> @timenote(at: 65.250){00:01:05.250} Key insight"
+        let migrated = TimenoteFormat.migratingLegacySyntax(in: old)
+
+        XCTAssertTrue(migrated.contains("{[01:05]}"), "Old millisecond pill should become the bracketed pill")
+        XCTAssertFalse(migrated.contains("00:01:05.250"))
+        let parsed = TimenoteFormat.parseLine(migrated)
+        XCTAssertEqual(parsed?.timestampSeconds ?? -1, 65.25, accuracy: 0.001)
+        XCTAssertEqual(parsed?.text, "Key insight")
+        // And running it again changes nothing.
+        XCTAssertEqual(TimenoteFormat.migratingLegacySyntax(in: migrated), migrated)
+    }
 }
 #endif

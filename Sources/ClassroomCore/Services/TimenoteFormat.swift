@@ -27,6 +27,10 @@ public enum TimenoteFormat {
         pattern: #"^> \[!timenote ([0-9:.]+)\] ?(.*)$"#
     )
 
+    /// Cheap pre-filter for `migratingLegacySyntax(in:)` — skip the per-line
+    /// regex pass unless a timenote directive might be present.
+    private static let currentDirectiveMarker = "@timenote(at:"
+
     public static func formatTimestamp(_ totalSeconds: Double) -> String {
         let clampedSeconds = max(0, totalSeconds)
         let totalMilliseconds = Int((clampedSeconds * 1000).rounded())
@@ -35,6 +39,22 @@ public enum TimenoteFormat {
         let wholeSeconds = (totalMilliseconds / 1000) % 60
         let milliseconds = totalMilliseconds % 1000
         return String(format: "%02d:%02d:%02d.%03d", hours, minutes, wholeSeconds, milliseconds)
+    }
+
+    /// The human-readable pill shown for a timestamp, shared by Notes
+    /// timenotes and the transcript so both read the same: `[MM:SS]`, or
+    /// `[HH:MM:SS]` once the stamp reaches an hour (or `forcingHours` is set —
+    /// the transcript keeps one format for a long video). Zero-padded so a
+    /// column of them stays aligned.
+    public static func bracketedTimestamp(_ totalSeconds: Double, forcingHours: Bool = false) -> String {
+        let total = max(0, Int(totalSeconds.rounded()))
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        if forcingHours || hours > 0 {
+            return String(format: "[%02d:%02d:%02d]", hours, minutes, seconds)
+        }
+        return String(format: "[%02d:%02d]", minutes, seconds)
     }
 
     public static func parseTimestamp(_ timestamp: String) -> Double? {
@@ -60,7 +80,7 @@ public enum TimenoteFormat {
     /// The text to insert for a new timenote, with a trailing space ready
     /// for the note's content.
     public static func linePrefix(timestampSeconds: Double) -> String {
-        directivePrefix + secondsLiteral(timestampSeconds) + argumentsClose + formatTimestamp(timestampSeconds) + bodyClose
+        directivePrefix + secondsLiteral(timestampSeconds) + argumentsClose + bracketedTimestamp(timestampSeconds) + bodyClose
     }
 
     /// A locale-independent, `Double`-parseable literal for the directive's
@@ -84,27 +104,35 @@ public enum TimenoteFormat {
         return (timestampSeconds, ns.substring(with: match.range(at: 2)))
     }
 
-    /// Rewrites any legacy `> [!timenote HH:MM:SS.mmm] text` lines in `text`
-    /// to the current directive syntax, line by line. Idempotent: text with
-    /// no legacy lines (including text already in the current format) passes
-    /// through unchanged. Run once when a `page.md`/`note.md` loads so
-    /// existing lesson notes upgrade transparently; the next save persists
-    /// the new form.
+    /// Normalizes timenote lines in `text`, line by line:
+    ///   * legacy `> [!timenote HH:MM:SS.mmm] text` → current directive syntax;
+    ///   * current directives → their body re-rendered in the current pill
+    ///     format (so notes saved with the old `{HH:MM:SS.mmm}` body upgrade to
+    ///     the `[MM:SS]`/`[HH:MM:SS]` pill).
+    /// Idempotent: a document already in the current form passes through
+    /// unchanged (rebuilding from the directive's `at:` seconds reproduces the
+    /// same line). Run once when a `page.md`/`note.md` loads so existing lesson
+    /// content upgrades transparently; the next save persists the new form.
     public static func migratingLegacySyntax(in text: String) -> String {
-        guard text.contains(legacyLinePrefixMarker) else {
+        guard text.contains(legacyLinePrefixMarker) || text.contains(currentDirectiveMarker) else {
             return text
         }
 
         return text.components(separatedBy: "\n").map { line -> String in
             let ns = line as NSString
-            guard
-                let match = legacyLineRegex.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)),
-                let timestampSeconds = parseTimestamp(ns.substring(with: match.range(at: 1)))
-            else {
-                return line
+
+            if let match = legacyLineRegex.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)),
+               let timestampSeconds = parseTimestamp(ns.substring(with: match.range(at: 1))) {
+                return linePrefix(timestampSeconds: timestampSeconds) + ns.substring(with: match.range(at: 2))
             }
 
-            return linePrefix(timestampSeconds: timestampSeconds) + ns.substring(with: match.range(at: 2))
+            // A current-syntax directive: rebuild from its `at:` seconds so an
+            // old `{HH:MM:SS.mmm}` body is re-rendered as the current pill.
+            if let parsed = parseLine(line) {
+                return linePrefix(timestampSeconds: parsed.timestampSeconds) + parsed.text
+            }
+
+            return line
         }.joined(separator: "\n")
     }
 }

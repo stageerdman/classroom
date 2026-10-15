@@ -359,7 +359,7 @@ private struct TranscriptTimestampButton: View {
 
     var body: some View {
         Button(action: onSeek) {
-            Text(Self.label(for: seconds, usesHours: usesHours))
+            Text(TimenoteFormat.bracketedTimestamp(seconds, forcingHours: usesHours))
                 .font(.system(size: 11, weight: .semibold).monospacedDigit())
                 .foregroundStyle(canSeek ? color : Color.secondary)
                 .padding(.horizontal, 5)
@@ -380,19 +380,5 @@ private struct TranscriptTimestampButton: View {
                 NSCursor.pop()
             }
         }
-    }
-
-    /// `[HH:MM:SS]` when `usesHours` (the whole transcript is in that format
-    /// for a long video), otherwise `[MM:SS]`. Minutes/hours zero-padded so
-    /// the mono-digit column stays aligned.
-    static func label(for seconds: Double, usesHours: Bool) -> String {
-        let total = max(0, Int(seconds.rounded()))
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let secs = total % 60
-        if usesHours {
-            return String(format: "[%02d:%02d:%02d]", hours, minutes, secs)
-        }
-        return String(format: "[%02d:%02d]", minutes, secs)
     }
 }
