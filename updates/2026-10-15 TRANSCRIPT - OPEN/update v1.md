@@ -67,18 +67,20 @@ Status: ☐ todo · ◐ in progress · ☑ done
       collision guard; case-insensitive; no-transcript; coexists with
       page.md + note.md. 7 tests, green.
 
-### Phase 1 — Parsing (Core)  ◐
-- [ ] `TranscriptCue` model + `Speaker` mapping.
-- [ ] `TranscriptParser`: markdown → `[TranscriptCue]`. Header regex
-      `**Speaker** [ts] (paren)?`; `[MM:SS]`, `[H:MM:SS]`, `[HH:MM:SS]`;
-      non-matching lines fold into the current cue's body; `end` = next
-      cue's `start`. Never throws (malformed → best effort).
-- [ ] `TranscriptService` (load the file, mirror `NotesService`, read-only).
-- [ ] Active-cue resolution (binary search: last cue with `start ≤ t`).
-- [ ] Tests: the two real examples, multi-paragraph cue, parentheticals,
-      inline `[nesrozumitelné]`, H:MM:SS, empty/malformed, active-cue lookup.
+### Phase 1 — Parsing (Core)  ☑
+- [x] `TranscriptCue` model (speaker→color mapping left to the view).
+- [x] `TranscriptParser`: markdown → `[TranscriptCue]`. Header regex
+      `**Speaker** [ts] (paren)?`; `[MM:SS]`, `[H:MM:SS]`, `[HH:MM:SS]`
+      (+ optional fractional seconds); unparseable "headers" fold into the
+      current cue's body; `end` = next cue's `start` (last = `.infinity`).
+      Never throws.
+- [x] `TranscriptService` (load + parse, mirror `NotesService`, read-only).
+- [x] Active-cue resolution: `[TranscriptCue].activeCueID(at:)` binary search.
+- [x] Tests: `TranscriptParserTests` — real examples, multi-paragraph cue,
+      parentheticals, inline `[nesrozumitelné]`, H:MM:SS + fractional,
+      preamble, non-header bold line, empty, active-cue lookup. 11 tests.
 
-### Phase 2 — ViewModel & section availability  ☐
+### Phase 2 — ViewModel & section availability  ◐
 - [ ] `LessonContentSection.transcript` + title.
 - [ ] Inject `TranscriptService`; `@Published transcriptCues`;
       `loadTranscriptForSelectedLesson()` in the load flow.
